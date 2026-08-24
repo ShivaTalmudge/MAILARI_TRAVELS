@@ -5,8 +5,8 @@ import { Button } from '../ui/Button';
 export default function FleetShowcase() {
   const fleet = [
     { 
-      name: 'Sedan', 
-      models: 'Swift Dzire, Etios, or similar',
+      name: 'Swift Dzire', 
+      models: 'Premium Sedan',
       capacity: 4, 
       luggage: 2,
       desc: 'Comfortable rides for small families or business travel. Efficient and smooth.', 
@@ -14,8 +14,8 @@ export default function FleetShowcase() {
       image: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&q=80&w=600'
     },
     { 
-      name: 'SUV', 
-      models: 'Innova Crysta, Ertiga, or similar',
+      name: 'Ertiga', 
+      models: 'Comfortable 6-Seater SUV',
       capacity: 6, 
       luggage: 3,
       desc: 'Spacious and luxurious for longer outstation trips and airport transfers.', 

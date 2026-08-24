@@ -54,8 +54,8 @@ async function main() {
 
   // ── Vehicle Types ─────────────────────────────────────
   console.log('  Creating vehicle types...');
-  const sedan = await prisma.vehicleType.upsert({ where: { name: 'Sedan' }, update: {}, create: { name: 'Sedan', description: 'Comfortable sedan for city and outstation travel', seatingCapacity: 4, luggageCapacity: 2, sortOrder: 1 } });
-  const suv = await prisma.vehicleType.upsert({ where: { name: 'SUV' }, update: {}, create: { name: 'SUV', description: 'Spacious SUV for family trips', seatingCapacity: 6, luggageCapacity: 3, sortOrder: 2 } });
+  const sedan = await prisma.vehicleType.upsert({ where: { name: 'Swift Dzire' }, update: {}, create: { name: 'Swift Dzire', description: 'Comfortable sedan for city and outstation travel', seatingCapacity: 4, luggageCapacity: 2, sortOrder: 1 } });
+  const suv = await prisma.vehicleType.upsert({ where: { name: 'Ertiga' }, update: {}, create: { name: 'Ertiga', description: 'Spacious 6-seater for family trips', seatingCapacity: 6, luggageCapacity: 3, sortOrder: 2 } });
   const hatchback = await prisma.vehicleType.upsert({ where: { name: 'Hatchback' }, update: {}, create: { name: 'Hatchback', description: 'Economical hatchback for city travel', seatingCapacity: 4, luggageCapacity: 1, sortOrder: 3 } });
   const tempo = await prisma.vehicleType.upsert({ where: { name: 'Tempo Traveller' }, update: {}, create: { name: 'Tempo Traveller', description: 'Large capacity for group travel', seatingCapacity: 12, luggageCapacity: 6, sortOrder: 4 } });
   const luxury = await prisma.vehicleType.upsert({ where: { name: 'Luxury Car' }, update: {}, create: { name: 'Luxury Car', description: 'Premium luxury vehicles for VIP travel', seatingCapacity: 4, luggageCapacity: 2, sortOrder: 5 } });
