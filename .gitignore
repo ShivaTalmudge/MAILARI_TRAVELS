@@ -1,0 +1,41 @@
+# ──────────────────────────────────────────────────────
+# Git ignore — Mailari Travels
+# ──────────────────────────────────────────────────────
+
+# Environment files — NEVER commit
+.env
+.env.local
+.env.production
+.env.staging
+
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Build outputs
+dist/
+*/dist/
+build/
+*/build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Prisma
+server/prisma/migrations/*.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Uploads
+server/uploads/
+
+# Test artifacts
+coverage/
