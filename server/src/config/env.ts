@@ -22,7 +22,15 @@ const getEnv = (key: string, fallback?: string): string => {
   throw new Error(`Missing required environment variable: ${key}`);
 };
 
+let databaseUrl = process.env.DATABASE_URL || '';
+if (!databaseUrl && process.env.DB_USER && process.env.DB_PASSWORD && process.env.DB_NAME) {
+  const host = process.env.DB_HOST || '127.0.0.1';
+  const port = process.env.DB_PORT || '3306';
+  databaseUrl = `mysql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${host}:${port}/${process.env.DB_NAME}`;
+}
+
 export const config = {
+  databaseUrl,
   port: process.env.PORT || 5000,
   nodeEnv: process.env.NODE_ENV || 'development',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
