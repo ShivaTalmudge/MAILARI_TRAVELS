@@ -42,11 +42,16 @@ export const getCustomers = async (req: Request, res: Response): Promise<void> =
     );
 
     const customers = customersRaw.map((row: any) => ({
-      id: row.id, email: row.email, mobile: row.mobile, status: row.status, lastLoginAt: row.lastLoginAt, createdAt: row.createdAt,
-      customerProfile: row.profileId ? {
-        id: row.profileId, fullName: row.fullName, city: row.city, state: row.state,
-        _count: { bookings: row.bookingsCount }
-      } : null
+      id: row.profileId || row.id,
+      fullName: row.fullName || 'Unknown',
+      totalBookings: row.bookingsCount || 0,
+      user: {
+        id: row.id,
+        mobile: row.mobile,
+        email: row.email,
+        isActive: row.status === 'ACTIVE',
+        createdAt: row.createdAt,
+      }
     }));
 
     sendSuccess(res, customers, 'Customers fetched', 200, { total, page, limit, totalPages: Math.ceil(total / limit) });
@@ -92,15 +97,17 @@ export const getCustomerById = async (req: Request, res: Response): Promise<void
     );
 
     const response = {
-      id: user.id, email: user.email, mobile: user.mobile, status: user.status, lastLoginAt: user.lastLoginAt, createdAt: user.createdAt,
-      customerProfile: {
-        id: user.profileId, fullName: user.fullName, address: user.address, city: user.city, state: user.state, pincode: user.pincode,
-        bookings: bookings.map((b: any) => ({
-          ...b,
-          vehicleType: b.vehicleTypeName ? { name: b.vehicleTypeName } : null,
-          driver: b.driverName ? { fullName: b.driverName } : null
-        }))
-      }
+      id: user.profileId || user.id,
+      fullName: user.fullName || 'Unknown',
+      address: user.address, city: user.city, state: user.state, pincode: user.pincode,
+      user: {
+        id: user.id, email: user.email, mobile: user.mobile, isActive: user.status === 'ACTIVE', lastLoginAt: user.lastLoginAt, createdAt: user.createdAt,
+      },
+      bookings: bookings.map((b: any) => ({
+        ...b,
+        vehicleType: b.vehicleTypeName ? { name: b.vehicleTypeName } : null,
+        driver: b.driverName ? { fullName: b.driverName } : null
+      }))
     };
 
     sendSuccess(res, response);

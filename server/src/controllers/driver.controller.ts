@@ -43,12 +43,20 @@ export const getDrivers = async (req: Request, res: Response): Promise<void> => 
     );
 
     const drivers = driversRaw.map((row: any) => ({
-      id: row.id, email: row.email, mobile: row.mobile, status: row.status, lastLoginAt: row.lastLoginAt, createdAt: row.createdAt,
-      driverProfile: row.profileId ? {
-        id: row.profileId, fullName: row.fullName, licenceNumber: row.licenceNumber, status: row.driverStatus, city: row.city, state: row.state,
-        profilePhoto: row.profilePhoto, licenceExpiry: row.licenceExpiry,
-        assignedVehicle: row.vehicleReg ? { registrationNumber: row.vehicleReg, make: row.vehicleMake, model: row.vehicleModel } : null
-      } : null
+      id: row.profileId || row.id,
+      fullName: row.fullName || 'Unknown',
+      licenceNumber: row.licenceNumber,
+      status: row.driverStatus,
+      city: row.city, state: row.state,
+      profilePhoto: row.profilePhoto, licenceExpiry: row.licenceExpiry,
+      user: {
+        id: row.id,
+        mobile: row.mobile,
+        email: row.email,
+        isActive: row.status === 'ACTIVE',
+        createdAt: row.createdAt,
+      },
+      assignedVehicle: row.vehicleReg ? { registrationNumber: row.vehicleReg, make: row.vehicleMake, model: row.vehicleModel } : null
     }));
 
     sendSuccess(res, drivers, 'Drivers fetched', 200, { total, page, limit, totalPages: Math.ceil(total / limit) });
@@ -114,8 +122,14 @@ export const getDriverById = async (req: Request, res: Response): Promise<void> 
     const user = users[0];
 
     const response: any = {
-      id: user.id, email: user.email, mobile: user.mobile, status: user.status, lastLoginAt: user.lastLoginAt, createdAt: user.createdAt,
-      driverProfile: { assignedVehicle: null, bookings: [] }
+      id: user.profileId || user.id,
+      fullName: user.fullName || 'Unknown',
+      licenceNumber: user.licenceNumber,
+      status: user.driverStatus, city: user.city, state: user.state,
+      user: {
+        id: user.id, email: user.email, mobile: user.mobile, isActive: user.status === 'ACTIVE', lastLoginAt: user.lastLoginAt, createdAt: user.createdAt,
+      },
+      assignedVehicle: null, bookings: []
     };
 
     if (user.assignedVehicleId) {
@@ -124,7 +138,7 @@ export const getDriverById = async (req: Request, res: Response): Promise<void> 
       );
       if (vehicles.length > 0) {
         const [docs]: any = await pool.execute('SELECT * FROM vehicle_documents WHERE vehicleId = ?', [user.assignedVehicleId]);
-        response.driverProfile.assignedVehicle = { ...vehicles[0], vehicleType: vehicles[0].typeName ? { name: vehicles[0].typeName } : null, documents: docs };
+        response.assignedVehicle = { ...vehicles[0], vehicleType: vehicles[0].typeName ? { name: vehicles[0].typeName } : null, documents: docs };
       }
     }
 
@@ -134,7 +148,7 @@ export const getDriverById = async (req: Request, res: Response): Promise<void> 
        WHERE b.driverId = ? ORDER BY b.createdAt DESC LIMIT 20`, [user.profileId]
     );
 
-    response.driverProfile.bookings = bookingsRaw.map((b: any) => ({
+    response.bookings = bookingsRaw.map((b: any) => ({
       ...b, customer: b.customerName ? { fullName: b.customerName } : null,
       vehicle: b.registrationNumber ? { registrationNumber: b.registrationNumber, make: b.make, model: b.model } : null
     }));
