@@ -34,6 +34,9 @@ import dashboardRoutes from './routes/dashboard.routes';
 
 const app = express();
 
+// Trust reverse proxy (required for Hostinger LiteSpeed / NGINX to get real client IPs)
+app.set('trust proxy', 1);
+
 // ── Security Headers ──────────────────────────────────
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
