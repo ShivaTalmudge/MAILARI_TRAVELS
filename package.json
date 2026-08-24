@@ -4,6 +4,7 @@
   "private": true,
   "description": "Mailari Travels — Complete Travel & Fleet Management Platform",
   "scripts": {
+    "postinstall": "cd client && npm install && cd ../server && npm install && cd .. && npm run build",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:client": "cd client && npm run dev",
     "dev:server": "cd server && npm run dev",
