@@ -2,7 +2,8 @@
 // MySQL database with full normalized design
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  engineType    = "binary"
 }
 
 datasource db {
