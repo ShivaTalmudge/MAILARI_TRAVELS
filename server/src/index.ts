@@ -12,6 +12,8 @@ import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
 import { prisma } from './config/prisma';
 
+let dbConnectionError: string | null = null;
+
 // Routes
 import authRoutes from './routes/auth.routes';
 import customerRoutes from './routes/customer.routes';
@@ -93,6 +95,19 @@ app.get('/api/health', (_req, res) => {
   res.json({ success: true, message: 'Mailari Travels API is running', timestamp: new Date().toISOString() });
 });
 
+// ── Debug DB Route ────────────────────────────────────
+app.get('/api/debug-db', (_req, res) => {
+  res.json({
+    success: false,
+    message: 'Database Connection Status',
+    error: dbConnectionError || 'No error. Database is connected!',
+    dbUser: process.env.DB_USER || 'Not Set',
+    dbName: process.env.DB_NAME || 'Not Set',
+    dbHost: process.env.DB_HOST || 'Not Set',
+    hasDatabaseUrl: !!process.env.DATABASE_URL
+  });
+});
+
 // ── API Routes ────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
@@ -138,16 +153,18 @@ const startServer = async () => {
   try {
     await prisma.$connect();
     console.log('✅ Database connected');
-
-    app.listen(config.port, () => {
-      console.log(`🚀 Mailari Travels API running on port ${config.port}`);
-      console.log(`   Environment: ${config.nodeEnv}`);
-      console.log(`   Client URL: ${config.clientUrl}`);
-    });
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
+  } catch (error: any) {
+    console.error('❌ Failed to connect to database:', error);
+    dbConnectionError = error.message || String(error);
+    // DO NOT process.exit(1) here so the server stays alive and we avoid the 503 error!
   }
+
+  // Always start the HTTP server even if DB fails, so Hostinger doesn't throw 503
+  app.listen(config.port, () => {
+    console.log(`🚀 Mailari Travels API running on port ${config.port}`);
+    console.log(`   Environment: ${config.nodeEnv}`);
+    console.log(`   Client URL: ${config.clientUrl}`);
+  });
 };
 
 startServer();
