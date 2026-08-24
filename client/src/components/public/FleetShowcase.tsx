@@ -11,7 +11,7 @@ export default function FleetShowcase() {
       luggage: 2,
       desc: 'Comfortable rides for small families or business travel. Efficient and smooth.', 
       tag: 'Popular',
-      image: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&q=80&w=600'
+      image: '/images/fleet/swift_dzire.jpg'
     },
     { 
       name: 'Ertiga', 
@@ -20,7 +20,7 @@ export default function FleetShowcase() {
       luggage: 3,
       desc: 'Spacious and luxurious for longer outstation trips and airport transfers.', 
       tag: 'Premium',
-      image: 'https://images.unsplash.com/photo-1563720223185-11003d516935?auto=format&fit=crop&q=80&w=600'
+      image: '/images/fleet/ertiga.jpg'
     },
     { 
       name: 'Tempo Traveller', 
@@ -29,7 +29,7 @@ export default function FleetShowcase() {
       luggage: 6,
       desc: 'Perfect for group tours, corporate outings, and family event transportation.', 
       tag: 'Group',
-      image: 'https://images.unsplash.com/photo-1570125909232-eb263c85f48c?auto=format&fit=crop&q=80&w=600'
+      image: '/images/fleet/tempo_traveller.jpg'
     },
   ];
 
