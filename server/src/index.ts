@@ -10,7 +10,7 @@ import { rateLimit } from 'express-rate-limit';
 import { config } from './config/env';
 import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
-import { prisma } from './config/prisma';
+import { pool } from './config/db';
 
 let dbConnectionError: string | null = null;
 
@@ -154,8 +154,9 @@ app.use(errorHandler);
 // ── Start Server ──────────────────────────────────────
 const startServer = async () => {
   try {
-    await prisma.$connect();
+    const connection = await pool.getConnection();
     console.log('✅ Database connected');
+    connection.release();
   } catch (error: any) {
     console.error('❌ Failed to connect to database:', error);
     dbConnectionError = error.message || String(error);
@@ -175,7 +176,7 @@ startServer();
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
-  await prisma.$disconnect();
+  await pool.end();
   process.exit(0);
 });
 

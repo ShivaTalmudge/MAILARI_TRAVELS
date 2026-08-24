@@ -1,70 +1,85 @@
 import { Request, Response } from 'express';
-import { prisma } from '../config/prisma';
+import { pool } from '../config/db';
 import { sendSuccess, sendCreated, sendNotFound } from '../utils/response';
 import { createAuditLog } from '../utils/helpers';
+import { v4 as uuidv4 } from 'uuid';
 
 export const getPricingRules = async (_req: Request, res: Response): Promise<void> => {
-  const rules = await prisma.pricingRule.findMany({
-    include: { vehicleType: true },
-    orderBy: [{ vehicleType: { name: 'asc' } }, { tripType: 'asc' }],
-  });
+  const [rulesRaw]: any = await pool.execute(`
+    SELECT pr.*, vt.name as vehicleTypeName
+    FROM pricing_rules pr
+    LEFT JOIN vehicle_types vt ON pr.vehicleTypeId = vt.id
+    ORDER BY vt.name ASC, pr.tripType ASC
+  `);
+  const rules = rulesRaw.map((r: any) => ({ ...r, vehicleType: r.vehicleTypeName ? { name: r.vehicleTypeName } : null }));
   sendSuccess(res, rules);
 };
 
 export const createPricingRule = async (req: Request, res: Response): Promise<void> => {
   const data = req.body;
-  const rule = await prisma.pricingRule.create({
-    data: {
-      vehicleTypeId: data.vehicleTypeId,
-      tripType: data.tripType,
-      baseFare: parseFloat(data.baseFare || '0'),
-      perKmRate: parseFloat(data.perKmRate || '0'),
-      perHourRate: parseFloat(data.perHourRate || '0'),
-      driverAllowanceDay: parseFloat(data.driverAllowanceDay || '0'),
-      nightChargeMultiplier: parseFloat(data.nightChargeMultiplier || '1'),
-      extraKmRate: parseFloat(data.extraKmRate || '0'),
-      airportSurcharge: parseFloat(data.airportSurcharge || '0'),
-      statePermitCharge: parseFloat(data.statePermitCharge || '0'),
-    },
-    include: { vehicleType: true },
-  });
-  await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'CREATE', entity: 'PricingRule', entityId: rule.id, description: `Pricing rule created for ${rule.vehicleType.name} - ${data.tripType}`, ipAddress: req.ip });
-  sendCreated(res, rule, 'Pricing rule created');
+  const id = uuidv4();
+  await pool.execute(
+    `INSERT INTO pricing_rules (id, vehicleTypeId, tripType, baseFare, perKmRate, perHourRate, driverAllowanceDay, nightChargeMultiplier, extraKmRate, airportSurcharge, statePermitCharge, isActive, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, true, NOW(), NOW())`,
+    [
+      id, data.vehicleTypeId, data.tripType, parseFloat(data.baseFare || '0'), parseFloat(data.perKmRate || '0'), parseFloat(data.perHourRate || '0'),
+      parseFloat(data.driverAllowanceDay || '0'), parseFloat(data.nightChargeMultiplier || '1'), parseFloat(data.extraKmRate || '0'),
+      parseFloat(data.airportSurcharge || '0'), parseFloat(data.statePermitCharge || '0')
+    ]
+  );
+  const [[rule]]: any = await pool.execute('SELECT * FROM pricing_rules WHERE id = ?', [id]);
+  const [[vehicleType]]: any = await pool.execute('SELECT * FROM vehicle_types WHERE id = ?', [data.vehicleTypeId]);
+  
+  await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'CREATE', entity: 'PricingRule', entityId: id, description: `Pricing rule created for ${vehicleType.name} - ${data.tripType}`, ipAddress: req.ip });
+  sendCreated(res, { ...rule, vehicleType }, 'Pricing rule created');
 };
 
 export const updatePricingRule = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
   const data = req.body;
-  const rule = await prisma.pricingRule.update({
-    where: { id },
-    data: {
-      baseFare: parseFloat(data.baseFare || '0'),
-      perKmRate: parseFloat(data.perKmRate || '0'),
-      perHourRate: parseFloat(data.perHourRate || '0'),
-      driverAllowanceDay: parseFloat(data.driverAllowanceDay || '0'),
-      nightChargeMultiplier: parseFloat(data.nightChargeMultiplier || '1'),
-      extraKmRate: parseFloat(data.extraKmRate || '0'),
-      airportSurcharge: parseFloat(data.airportSurcharge || '0'),
-      statePermitCharge: parseFloat(data.statePermitCharge || '0'),
-      isActive: data.isActive !== undefined ? Boolean(data.isActive) : undefined,
-    },
-    include: { vehicleType: true },
-  });
+  
+  await pool.execute(
+    `UPDATE pricing_rules SET baseFare = ?, perKmRate = ?, perHourRate = ?, driverAllowanceDay = ?, nightChargeMultiplier = ?, extraKmRate = ?, airportSurcharge = ?, statePermitCharge = ?, isActive = COALESCE(?, isActive), updatedAt = NOW() WHERE id = ?`,
+    [
+      parseFloat(data.baseFare || '0'), parseFloat(data.perKmRate || '0'), parseFloat(data.perHourRate || '0'), parseFloat(data.driverAllowanceDay || '0'),
+      parseFloat(data.nightChargeMultiplier || '1'), parseFloat(data.extraKmRate || '0'), parseFloat(data.airportSurcharge || '0'), parseFloat(data.statePermitCharge || '0'),
+      data.isActive !== undefined ? Boolean(data.isActive) : null, id
+    ]
+  );
+  
+  const [[rule]]: any = await pool.execute('SELECT * FROM pricing_rules WHERE id = ?', [id]);
+  const [[vehicleType]]: any = await pool.execute('SELECT * FROM vehicle_types WHERE id = ?', [rule.vehicleTypeId]);
+  
   await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'UPDATE', entity: 'PricingRule', entityId: id, description: `Pricing rule updated` });
-  sendSuccess(res, rule, 'Pricing rule updated');
+  sendSuccess(res, { ...rule, vehicleType }, 'Pricing rule updated');
 };
 
 export const getTaxConfigs = async (_req: Request, res: Response): Promise<void> => {
-  const configs = await prisma.taxConfig.findMany({ orderBy: { name: 'asc' } });
+  const [configs]: any = await pool.execute('SELECT * FROM tax_configs ORDER BY name ASC');
   sendSuccess(res, configs);
 };
 
 export const createTaxConfig = async (req: Request, res: Response): Promise<void> => {
   const { name, cgstRate, sgstRate, igstRate, isActive, isDefault } = req.body;
-  if (isDefault) await prisma.taxConfig.updateMany({ data: { isDefault: false } });
-  const config = await prisma.taxConfig.create({
-    data: { name, cgstRate: parseFloat(cgstRate || '0'), sgstRate: parseFloat(sgstRate || '0'), igstRate: parseFloat(igstRate || '0'), isActive: Boolean(isActive), isDefault: Boolean(isDefault) },
-  });
+  const id = uuidv4();
+  
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    if (isDefault) await connection.execute('UPDATE tax_configs SET isDefault = false');
+    await connection.execute(
+      `INSERT INTO tax_configs (id, name, cgstRate, sgstRate, igstRate, isActive, isDefault, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [id, name, parseFloat(cgstRate || '0'), parseFloat(sgstRate || '0'), parseFloat(igstRate || '0'), Boolean(isActive), Boolean(isDefault)]
+    );
+    await connection.commit();
+  } catch (e) {
+    await connection.rollback();
+    throw e;
+  } finally {
+    connection.release();
+  }
+  
+  const [[config]]: any = await pool.execute('SELECT * FROM tax_configs WHERE id = ?', [id]);
   sendCreated(res, config, 'Tax configuration created');
 };
 

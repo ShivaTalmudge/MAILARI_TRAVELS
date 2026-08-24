@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken, extractToken, JwtPayload } from '../utils/jwt';
-import { prisma } from '../config/prisma';
+import { pool } from '../config/db';
 import { sendUnauthorized } from '../utils/response';
-import { Role, UserStatus } from '@prisma/client';
+import { Role, UserStatus } from '../types';
 
 declare global {
   namespace Express {
@@ -23,31 +23,28 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
   try {
     const payload = verifyToken(token);
 
-    // Verify user still exists and is active
-    const user = await prisma.user.findUnique({
-      where: { id: payload.userId },
-      select: { id: true, status: true, role: true },
-    });
-
-    if (!user) {
+    const [rows]: any = await pool.execute('SELECT id, status, role FROM users WHERE id = ?', [payload.userId]);
+    
+    if (rows.length === 0) {
       sendUnauthorized(res, 'User account not found.');
       return;
     }
+    
+    const user = rows[0];
 
     if (user.status === UserStatus.INACTIVE || user.status === UserStatus.SUSPENDED) {
       sendUnauthorized(res, 'Your account has been disabled. Please contact support.');
       return;
     }
 
-    // Always derive role from DB, never trust the token's role claim alone
-    req.user = { ...payload, role: user.role, status: user.status };
+    req.user = { ...payload, role: user.role as Role, status: user.status as UserStatus };
     next();
   } catch {
     sendUnauthorized(res, 'Invalid or expired session. Please log in again.');
   }
 };
 
-export const authorize = (...roles: Role[]) => {
+export const authorize = (...roles: (Role | string)[]) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {
       sendUnauthorized(res);

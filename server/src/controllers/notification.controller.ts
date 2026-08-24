@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { prisma } from '../config/prisma';
-import { sendSuccess } from '../utils/response';
+import { pool } from '../config/db';
+import { sendSuccess, sendError } from '../utils/response';
 import { getPaginationParams } from '../utils/helpers';
 
 export const getNotifications = async (req: Request, res: Response): Promise<void> => {
@@ -8,30 +8,40 @@ export const getNotifications = async (req: Request, res: Response): Promise<voi
   const userId = req.user!.userId;
   const { unreadOnly } = req.query as { unreadOnly?: string };
 
-  const where = { userId, ...(unreadOnly === 'true' ? { isRead: false } : {}) };
+  try {
+    let whereClause = 'WHERE userId = ?';
+    const params: any[] = [userId];
+    if (unreadOnly === 'true') {
+      whereClause += ' AND isRead = false';
+    }
 
-  const [notifications, total, unreadCount] = await Promise.all([
-    prisma.notification.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
-    prisma.notification.count({ where }),
-    prisma.notification.count({ where: { userId, isRead: false } }),
-  ]);
+    const [[{ total }]]: any = await pool.execute(`SELECT COUNT(*) as total FROM notifications ${whereClause}`, params);
+    const [[{ unreadCount }]]: any = await pool.execute('SELECT COUNT(*) as unreadCount FROM notifications WHERE userId = ? AND isRead = false', [userId]);
 
-  sendSuccess(res, { notifications, unreadCount }, 'Notifications fetched', 200, { total, page, limit, totalPages: Math.ceil(total / limit) });
+    params.push(take, skip);
+    const [notifications]: any = await pool.execute(`SELECT * FROM notifications ${whereClause} ORDER BY createdAt DESC LIMIT ? OFFSET ?`, params);
+
+    sendSuccess(res, { notifications, unreadCount }, 'Notifications fetched', 200, { total, page, limit, totalPages: Math.ceil(total / limit) });
+  } catch (err) {
+    console.error(err); sendError(res, 'Internal server error');
+  }
 };
 
 export const markAsRead = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
-  await prisma.notification.updateMany({
-    where: { id, userId: req.user!.userId },
-    data: { isRead: true },
-  });
-  sendSuccess(res, null, 'Notification marked as read');
+  try {
+    await pool.execute('UPDATE notifications SET isRead = true WHERE id = ? AND userId = ?', [id, req.user!.userId]);
+    sendSuccess(res, null, 'Notification marked as read');
+  } catch (err) {
+    console.error(err); sendError(res, 'Internal server error');
+  }
 };
 
 export const markAllAsRead = async (req: Request, res: Response): Promise<void> => {
-  await prisma.notification.updateMany({
-    where: { userId: req.user!.userId, isRead: false },
-    data: { isRead: true },
-  });
-  sendSuccess(res, null, 'All notifications marked as read');
+  try {
+    await pool.execute('UPDATE notifications SET isRead = true WHERE userId = ? AND isRead = false', [req.user!.userId]);
+    sendSuccess(res, null, 'All notifications marked as read');
+  } catch (err) {
+    console.error(err); sendError(res, 'Internal server error');
+  }
 };

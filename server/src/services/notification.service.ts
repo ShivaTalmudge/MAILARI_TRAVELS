@@ -1,8 +1,8 @@
-import { prisma } from '../config/prisma';
-import { NotificationType } from '@prisma/client';
+import { pool } from '../config/db';
+import { NotificationType } from '../types';
 import { config } from '../config/env';
+import { v4 as uuidv4 } from 'uuid';
 
-// ── In-App Notification ───────────────────────────────
 export const createNotification = async (
   userId: string,
   type: NotificationType,
@@ -11,9 +11,11 @@ export const createNotification = async (
   entityType?: string,
   entityId?: string
 ): Promise<void> => {
-  await prisma.notification.create({
-    data: { userId, type, title, message, entityType, entityId },
-  });
+  const id = uuidv4();
+  await pool.execute(
+    'INSERT INTO notifications (id, userId, type, title, message, entityType, entityId, isRead, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, false, NOW(), NOW())',
+    [id, userId, type, title, message, entityType || null, entityId || null]
+  );
 };
 
 export const createBulkNotifications = async (
@@ -24,12 +26,15 @@ export const createBulkNotifications = async (
   entityType?: string,
   entityId?: string
 ): Promise<void> => {
-  await prisma.notification.createMany({
-    data: userIds.map(userId => ({ userId, type, title, message, entityType, entityId })),
-  });
+  if (userIds.length === 0) return;
+  const values = userIds.map(userId => [uuidv4(), userId, type, title, message, entityType || null, entityId || null]);
+  const placeholders = values.map(() => '(?, ?, ?, ?, ?, ?, ?, false, NOW(), NOW())').join(', ');
+  await pool.execute(
+    `INSERT INTO notifications (id, userId, type, title, message, entityType, entityId, isRead, createdAt, updatedAt) VALUES ${placeholders}`,
+    values.flat()
+  );
 };
 
-// ── WhatsApp Provider Abstraction ─────────────────────
 interface WhatsAppMessage {
   to: string;
   templateName: string;
@@ -38,23 +43,15 @@ interface WhatsAppMessage {
 
 const sendWhatsApp = async (msg: WhatsAppMessage): Promise<void> => {
   if (!config.whatsappApiUrl || !config.whatsappApiToken) {
-    // Development mock: log to console
     console.log(`[WhatsApp MOCK] To: ${msg.to} | Template: ${msg.templateName} | Vars: ${msg.variables.join(', ')}`);
     return;
   }
-
-  // Production: call WhatsApp Business API
   try {
     const response = await fetch(config.whatsappApiUrl, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.whatsappApiToken}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Authorization': `Bearer ${config.whatsappApiToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: config.whatsappFromNumber,
-        to: `91${msg.to}`,
-        type: 'template',
+        from: config.whatsappFromNumber, to: `91${msg.to}`, type: 'template',
         template: { name: msg.templateName, language: { code: 'en' }, components: [{ type: 'body', parameters: msg.variables.map(v => ({ type: 'text', text: v })) }] },
       }),
     });
@@ -64,7 +61,6 @@ const sendWhatsApp = async (msg: WhatsAppMessage): Promise<void> => {
   }
 };
 
-// ── Notification Events ───────────────────────────────
 export const sendBookingConfirmation = async (mobile: string, bookingNumber: string, customerName: string): Promise<void> => {
   await sendWhatsApp({ to: mobile, templateName: 'booking_confirmation', variables: [customerName, bookingNumber] });
 };

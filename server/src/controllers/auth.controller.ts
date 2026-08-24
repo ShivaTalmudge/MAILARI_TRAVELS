@@ -1,111 +1,134 @@
 import { Request, Response } from 'express';
-import { prisma } from '../config/prisma';
+import { pool } from '../config/db';
 import { hashPassword, comparePassword, generateResetToken } from '../utils/password';
 import { signToken } from '../utils/jwt';
 import { OAuth2Client } from 'google-auth-library';
 import { sendSuccess, sendCreated, sendError, sendUnauthorized } from '../utils/response';
 import { createAuditLog } from '../utils/helpers';
-import { Role, UserStatus } from '@prisma/client';
+import { Role, UserStatus } from '../types';
+import { v4 as uuidv4 } from 'uuid';
+import { RowDataPacket } from 'mysql2/promise';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   const { fullName, mobile, email, password, address, city, state, pincode } = req.body;
 
-  // Check existing user
-  const existing = await prisma.user.findFirst({
-    where: { OR: [{ mobile }, ...(email ? [{ email }] : [])] },
-  });
-  if (existing) {
-    sendError(res, 'An account with this mobile number or email already exists.', 409);
-    return;
+  try {
+    const [existing]: any = await pool.execute(
+      'SELECT id FROM users WHERE mobile = ? OR (email IS NOT NULL AND email = ?)',
+      [mobile, email || null]
+    );
+
+    if (existing.length > 0) {
+      sendError(res, 'An account with this mobile number or email already exists.', 409);
+      return;
+    }
+
+    const passwordHash = await hashPassword(password);
+    const userId = uuidv4();
+    const profileId = uuidv4();
+
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      await connection.execute(
+        `INSERT INTO users (id, mobile, email, passwordHash, role, status, authProvider, emailVerified, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, 'LOCAL', false, NOW(), NOW())`,
+        [userId, mobile, email || null, passwordHash, Role.CUSTOMER, UserStatus.ACTIVE]
+      );
+
+      await connection.execute(
+        `INSERT INTO customer_profiles (id, userId, fullName, address, city, state, pincode, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        [profileId, userId, fullName, address || null, city || null, state || null, pincode || null]
+      );
+
+      await connection.commit();
+    } catch (e) {
+      await connection.rollback();
+      throw e;
+    } finally {
+      connection.release();
+    }
+
+    const token = signToken({ userId, role: Role.CUSTOMER, mobile: mobile || '', email: email || undefined });
+
+    await createAuditLog({
+      userId, userRole: Role.CUSTOMER,
+      action: 'REGISTER', entity: 'User', entityId: userId,
+      description: `Customer registered: ${fullName}`,
+      ipAddress: req.ip,
+    });
+
+    sendCreated(res, {
+      token,
+      user: { id: userId, role: Role.CUSTOMER, fullName, mobile, email: email || null },
+    }, 'Registration successful. Welcome to Mailari Travels!');
+  } catch (err: any) {
+    console.error('Registration error:', err);
+    sendError(res, 'Internal server error during registration', 500);
   }
-
-  const passwordHash = await hashPassword(password);
-
-  const user = await prisma.user.create({
-    data: {
-      mobile,
-      email: email || null,
-      passwordHash,
-      role: Role.CUSTOMER,
-      customerProfile: {
-        create: { fullName, address, city, state, pincode },
-      },
-    },
-    include: { customerProfile: true },
-  });
-
-  const token = signToken({ userId: user.id, role: user.role, mobile: user.mobile || '', email: user.email || undefined });
-
-  await createAuditLog({
-    userId: user.id, userRole: user.role,
-    action: 'REGISTER', entity: 'User', entityId: user.id,
-    description: `Customer registered: ${fullName}`,
-    ipAddress: req.ip,
-  });
-
-  sendCreated(res, {
-    token,
-    user: { id: user.id, role: user.role, fullName, mobile, email: user.email },
-  }, 'Registration successful. Welcome to Mailari Travels!');
 };
 
 export const login = async (req: Request, res: Response): Promise<void> => {
   const { identifier, password, role } = req.body;
 
-  // Find user by mobile or email
-  const user = await prisma.user.findFirst({
-    where: {
-      AND: [
-        { OR: [{ mobile: identifier }, { email: identifier }] },
-        { role: role as Role },
-      ],
-    },
-    include: {
-      customerProfile: true,
-      driverProfile: true,
-    },
-  });
+  try {
+    const [users]: any = await pool.execute(
+      `SELECT u.*, 
+        c.fullName as customerName, c.id as customerId,
+        d.fullName as driverName, d.id as driverId
+       FROM users u
+       LEFT JOIN customer_profiles c ON u.id = c.userId
+       LEFT JOIN driver_profiles d ON u.id = d.userId
+       WHERE (u.mobile = ? OR u.email = ?) AND u.role = ?`,
+      [identifier, identifier, role]
+    );
 
-  if (!user) {
-    sendUnauthorized(res, 'Invalid credentials. Please check your mobile/email and password.');
-    return;
+    if (users.length === 0) {
+      sendUnauthorized(res, 'Invalid credentials. Please check your mobile/email and password.');
+      return;
+    }
+
+    const user = users[0];
+
+    if (user.status === UserStatus.INACTIVE || user.status === UserStatus.SUSPENDED) {
+      sendUnauthorized(res, 'Your account has been disabled. Please contact Mailari Travels support.');
+      return;
+    }
+
+    if (!user.passwordHash) {
+      sendUnauthorized(res, 'This account uses Google Login. Please sign in with Google.');
+      return;
+    }
+
+    const isPasswordValid = await comparePassword(password, user.passwordHash);
+    if (!isPasswordValid) {
+      sendUnauthorized(res, 'Invalid credentials. Please check your mobile/email and password.');
+      return;
+    }
+
+    await pool.execute('UPDATE users SET lastLoginAt = NOW() WHERE id = ?', [user.id]);
+
+    const token = signToken({ userId: user.id, role: user.role, mobile: user.mobile || '', email: user.email || undefined });
+
+    await createAuditLog({
+      userId: user.id, userRole: user.role,
+      action: 'LOGIN', entity: 'User', entityId: user.id,
+      description: `User logged in: ${user.mobile || user.email}`,
+      ipAddress: req.ip,
+    });
+
+    const fullName = user.customerName || user.driverName || '';
+
+    sendSuccess(res, {
+      token,
+      user: { id: user.id, role: user.role, fullName, mobile: user.mobile, email: user.email },
+    }, 'Login successful');
+  } catch (err) {
+    console.error('Login error:', err);
+    sendError(res, 'Internal server error during login', 500);
   }
-
-  if (user.status === UserStatus.INACTIVE || user.status === UserStatus.SUSPENDED) {
-    sendUnauthorized(res, 'Your account has been disabled. Please contact Mailari Travels support.');
-    return;
-  }
-
-  if (!user.passwordHash) {
-    sendUnauthorized(res, 'This account uses Google Login. Please sign in with Google.');
-    return;
-  }
-
-  const isPasswordValid = await comparePassword(password, user.passwordHash);
-  if (!isPasswordValid) {
-    sendUnauthorized(res, 'Invalid credentials. Please check your mobile/email and password.');
-    return;
-  }
-
-  // Update last login
-  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-
-  const token = signToken({ userId: user.id, role: user.role, mobile: user.mobile || '', email: user.email || undefined });
-
-  await createAuditLog({
-    userId: user.id, userRole: user.role,
-    action: 'LOGIN', entity: 'User', entityId: user.id,
-    description: `User logged in: ${user.mobile}`,
-    ipAddress: req.ip,
-  });
-
-  const profile = user.customerProfile || user.driverProfile;
-  const fullName = profile && 'fullName' in profile ? profile.fullName : '';
-
-  sendSuccess(res, {
-    token,
-    user: { id: user.id, role: user.role, fullName, mobile: user.mobile, email: user.email },
-  }, 'Login successful');
 };
 
 export const logout = async (req: Request, res: Response): Promise<void> => {
@@ -124,25 +147,25 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
 export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
   const { identifier } = req.body;
 
-  const user = await prisma.user.findFirst({
-    where: { OR: [{ mobile: identifier }, { email: identifier }] },
-  });
+  const [users]: any = await pool.execute(
+    'SELECT id FROM users WHERE mobile = ? OR email = ?',
+    [identifier, identifier]
+  );
 
-  // Always return success to prevent user enumeration
-  if (!user) {
+  if (users.length === 0) {
     sendSuccess(res, null, 'If an account with this mobile/email exists, you will receive password reset instructions.');
     return;
   }
 
+  const user = users[0];
   const resetToken = generateResetToken();
-  const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+  const expiry = new Date(Date.now() + 60 * 60 * 1000);
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { passwordResetToken: resetToken, passwordResetExpiry: expiry },
-  });
+  await pool.execute(
+    'UPDATE users SET passwordResetToken = ?, passwordResetExpiry = ? WHERE id = ?',
+    [resetToken, expiry, user.id]
+  );
 
-  // In production, send via SMS/email. For now, log for development.
   if (process.env.NODE_ENV === 'development') {
     console.log(`[DEV] Password reset token for ${identifier}: ${resetToken}`);
   }
@@ -156,23 +179,23 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
 export const resetPassword = async (req: Request, res: Response): Promise<void> => {
   const { token, password } = req.body;
 
-  const user = await prisma.user.findFirst({
-    where: {
-      passwordResetToken: token,
-      passwordResetExpiry: { gt: new Date() },
-    },
-  });
+  const [users]: any = await pool.execute(
+    'SELECT id FROM users WHERE passwordResetToken = ? AND passwordResetExpiry > NOW()',
+    [token]
+  );
 
-  if (!user) {
+  if (users.length === 0) {
     sendError(res, 'Invalid or expired reset token.', 400);
     return;
   }
 
+  const user = users[0];
   const passwordHash = await hashPassword(password);
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { passwordHash, passwordResetToken: null, passwordResetExpiry: null },
-  });
+  
+  await pool.execute(
+    'UPDATE users SET passwordHash = ?, passwordResetToken = NULL, passwordResetExpiry = NULL WHERE id = ?',
+    [passwordHash, user.id]
+  );
 
   sendSuccess(res, null, 'Password reset successfully. You can now log in.');
 };
@@ -181,8 +204,11 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
   const { currentPassword, newPassword } = req.body;
   const userId = req.user!.userId;
 
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) { sendError(res, 'User not found.', 404); return; }
+  const [users]: any = await pool.execute('SELECT passwordHash, role FROM users WHERE id = ?', [userId]);
+  
+  if (users.length === 0) { sendError(res, 'User not found.', 404); return; }
+  const user = users[0];
+  
   if (!user.passwordHash) { sendError(res, 'Account uses third-party login.', 400); return; }
 
   const isValid = await comparePassword(currentPassword, user.passwordHash);
@@ -192,7 +218,7 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
   }
 
   const passwordHash = await hashPassword(newPassword);
-  await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+  await pool.execute('UPDATE users SET passwordHash = ? WHERE id = ?', [passwordHash, userId]);
 
   await createAuditLog({
     userId, userRole: user.role,
@@ -206,17 +232,37 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
 
 export const getMe = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user!.userId;
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true, email: true, mobile: true, role: true, status: true,
-      lastLoginAt: true, createdAt: true,
-      customerProfile: { select: { fullName: true, address: true, city: true, state: true, pincode: true } },
-      driverProfile: { select: { fullName: true, licenceNumber: true, licenceExpiry: true, status: true, profilePhoto: true } },
-    },
-  });
-  if (!user) { sendError(res, 'User not found.', 404); return; }
-  sendSuccess(res, user);
+  
+  const [users]: any = await pool.execute(
+    `SELECT u.id, u.email, u.mobile, u.role, u.status, u.lastLoginAt, u.createdAt,
+      c.fullName as customerName, c.address as customerAddress, c.city as customerCity, c.state as customerState, c.pincode as customerPincode,
+      d.fullName as driverName, d.licenceNumber as driverLicence, d.licenceExpiry as driverLicenceExpiry, d.status as driverProfileStatus, d.profilePhoto as driverPhoto
+     FROM users u
+     LEFT JOIN customer_profiles c ON u.id = c.userId
+     LEFT JOIN driver_profiles d ON u.id = d.userId
+     WHERE u.id = ?`,
+    [userId]
+  );
+
+  if (users.length === 0) { sendError(res, 'User not found.', 404); return; }
+  
+  const user = users[0];
+  const response: any = {
+    id: user.id, email: user.email, mobile: user.mobile, role: user.role, status: user.status, lastLoginAt: user.lastLoginAt, createdAt: user.createdAt
+  };
+
+  if (user.customerName) {
+    response.customerProfile = {
+      fullName: user.customerName, address: user.customerAddress, city: user.customerCity, state: user.customerState, pincode: user.customerPincode
+    };
+  }
+  if (user.driverName) {
+    response.driverProfile = {
+      fullName: user.driverName, licenceNumber: user.driverLicence, licenceExpiry: user.driverLicenceExpiry, status: user.driverProfileStatus, profilePhoto: user.driverPhoto
+    };
+  }
+
+  sendSuccess(res, response);
 };
 
 export const googleLogin = async (req: Request, res: Response): Promise<void> => {
@@ -252,26 +298,25 @@ export const googleLogin = async (req: Request, res: Response): Promise<void> =>
     const googleId = payload.sub;
     const avatarUrl = payload.picture;
 
-    // Check if user exists by email or googleId
-    let user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { googleId },
-          { email }
-        ]
-      },
-      include: { customerProfile: true, driverProfile: true }
-    });
+    const [users]: any = await pool.execute(
+      `SELECT u.*, 
+        c.fullName as customerName, c.id as customerId,
+        d.fullName as driverName, d.id as driverId
+       FROM users u
+       LEFT JOIN customer_profiles c ON u.id = c.userId
+       LEFT JOIN driver_profiles d ON u.id = d.userId
+       WHERE u.googleId = ? OR u.email = ?`,
+      [googleId, email]
+    );
+
+    let user = users.length > 0 ? users[0] : null;
 
     if (user) {
-      // Existing user. 
-      // If they registered with email/password and now log in with Google, link account safely
       if (!user.googleId) {
-        user = await prisma.user.update({
-          where: { id: user.id },
-          data: { googleId, authProvider: 'GOOGLE', emailVerified: true, avatarUrl },
-          include: { customerProfile: true, driverProfile: true }
-        });
+        await pool.execute(
+          'UPDATE users SET googleId = ?, authProvider = "GOOGLE", emailVerified = true, avatarUrl = ? WHERE id = ?',
+          [googleId, avatarUrl, user.id]
+        );
       }
       
       if (user.status !== UserStatus.ACTIVE) {
@@ -279,21 +324,30 @@ export const googleLogin = async (req: Request, res: Response): Promise<void> =>
         return;
       }
     } else {
-      // New User Registration via Google
-      user = await prisma.user.create({
-        data: {
-          email,
-          authProvider: 'GOOGLE',
-          googleId,
-          emailVerified: true,
-          avatarUrl,
-          role: Role.CUSTOMER,
-          customerProfile: {
-            create: { fullName: name },
-          },
-        },
-        include: { customerProfile: true, driverProfile: true },
-      });
+      const userId = uuidv4();
+      const profileId = uuidv4();
+      const connection = await pool.getConnection();
+      
+      try {
+        await connection.beginTransaction();
+        await connection.execute(
+          `INSERT INTO users (id, email, authProvider, googleId, emailVerified, avatarUrl, role, status, createdAt, updatedAt)
+           VALUES (?, ?, 'GOOGLE', ?, true, ?, ?, ?, NOW(), NOW())`,
+          [userId, email, googleId, avatarUrl || null, Role.CUSTOMER, UserStatus.ACTIVE]
+        );
+        await connection.execute(
+          `INSERT INTO customer_profiles (id, userId, fullName, createdAt, updatedAt) VALUES (?, ?, ?, NOW(), NOW())`,
+          [profileId, userId, name]
+        );
+        await connection.commit();
+        
+        user = { id: userId, role: Role.CUSTOMER, mobile: null, email, customerName: name, driverName: null, avatarUrl };
+      } catch (e) {
+        await connection.rollback();
+        throw e;
+      } finally {
+        connection.release();
+      }
       
       await createAuditLog({
         userId: user.id, userRole: user.role,
@@ -303,8 +357,7 @@ export const googleLogin = async (req: Request, res: Response): Promise<void> =>
       });
     }
 
-    // Update last login
-    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+    await pool.execute('UPDATE users SET lastLoginAt = NOW() WHERE id = ?', [user.id]);
 
     const token = signToken({ userId: user.id, role: user.role, mobile: user.mobile || '', email: user.email || undefined });
 
@@ -315,8 +368,7 @@ export const googleLogin = async (req: Request, res: Response): Promise<void> =>
       ipAddress: req.ip,
     });
 
-    const profile = user.customerProfile || user.driverProfile;
-    const fullName = profile && 'fullName' in profile ? profile.fullName : '';
+    const fullName = user.customerName || user.driverName || name || '';
 
     sendSuccess(res, {
       token,

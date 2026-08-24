@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import { prisma } from '../config/prisma';
+import { pool } from '../config/db';
 import { sendSuccess, sendError } from '../utils/response';
-import { Role, BookingStatus } from '@prisma/client';
+import { Role, BookingStatus } from '../types';
 
 export const getAdminDashboard = async (_req: Request, res: Response): Promise<void> => {
   const today = new Date();
@@ -9,82 +9,135 @@ export const getAdminDashboard = async (_req: Request, res: Response): Promise<v
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
-  const [
-    todayBookings, upcomingTrips, activeTrips, completedToday,
-    cancelledToday, totalCustomers, totalDrivers, totalVehicles,
-    availableVehicles, driversOnTrip, pendingPayments,
-    monthlyRevenue, bookingsByStatus, recentBookings,
-  ] = await Promise.all([
-    prisma.booking.count({ where: { pickupDate: { gte: today, lt: tomorrow } } }),
-    prisma.booking.count({ where: { pickupDate: { gte: tomorrow }, status: { in: [BookingStatus.CONFIRMED, BookingStatus.DRIVER_ASSIGNED] } } }),
-    prisma.booking.count({ where: { status: { in: [BookingStatus.TRIP_STARTED, BookingStatus.DRIVER_ON_THE_WAY, BookingStatus.ARRIVED] } } }),
-    prisma.booking.count({ where: { status: BookingStatus.TRIP_COMPLETED, updatedAt: { gte: today } } }),
-    prisma.booking.count({ where: { status: BookingStatus.CANCELLED, updatedAt: { gte: today } } }),
-    prisma.user.count({ where: { role: Role.CUSTOMER } }),
-    prisma.user.count({ where: { role: Role.DRIVER } }),
-    prisma.vehicle.count({ where: { status: { not: 'INACTIVE' } } }),
-    prisma.vehicle.count({ where: { status: 'AVAILABLE' } }),
-    prisma.driverProfile.count({ where: { status: 'ON_TRIP' } }),
-    prisma.booking.aggregate({ where: { paymentStatus: 'PENDING', status: BookingStatus.TRIP_COMPLETED }, _sum: { totalAmount: true } }),
-    // Monthly revenue (last 6 months)
-    prisma.payment.groupBy({
-      by: ['paymentDate'],
-      where: { status: 'PAID', paymentDate: { gte: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000) } },
-      _sum: { amount: true },
-      orderBy: { paymentDate: 'asc' },
-    }),
-    prisma.booking.groupBy({ by: ['status'], _count: { id: true } }),
-    prisma.booking.findMany({
-      take: 10,
-      orderBy: { createdAt: 'desc' },
-      include: { customer: { select: { fullName: true } }, vehicleType: { select: { name: true } } },
-    }),
-  ]);
+  try {
+    const [
+      [[{ todayBookings }]],
+      [[{ upcomingTrips }]],
+      [[{ activeTrips }]],
+      [[{ completedToday }]],
+      [[{ cancelledToday }]],
+      [[{ totalCustomers }]],
+      [[{ totalDrivers }]],
+      [[{ totalVehicles }]],
+      [[{ availableVehicles }]],
+      [[{ driversOnTrip }]],
+      [[{ pendingPaymentsAmount }]],
+      [monthlyRevenueRaw],
+      [bookingsByStatusRaw],
+      [recentBookingsRaw]
+    ]: any = await Promise.all([
+      pool.execute('SELECT COUNT(*) as todayBookings FROM bookings WHERE pickupDate >= ? AND pickupDate < ?', [today, tomorrow]),
+      pool.execute('SELECT COUNT(*) as upcomingTrips FROM bookings WHERE pickupDate >= ? AND status IN (?, ?)', [tomorrow, BookingStatus.CONFIRMED, BookingStatus.DRIVER_ASSIGNED]),
+      pool.execute('SELECT COUNT(*) as activeTrips FROM bookings WHERE status IN (?, ?, ?)', [BookingStatus.TRIP_STARTED, BookingStatus.DRIVER_ON_THE_WAY, BookingStatus.ARRIVED]),
+      pool.execute('SELECT COUNT(*) as completedToday FROM bookings WHERE status = ? AND updatedAt >= ?', [BookingStatus.TRIP_COMPLETED, today]),
+      pool.execute('SELECT COUNT(*) as cancelledToday FROM bookings WHERE status = ? AND updatedAt >= ?', [BookingStatus.CANCELLED, today]),
+      pool.execute('SELECT COUNT(*) as totalCustomers FROM users WHERE role = ?', [Role.CUSTOMER]),
+      pool.execute('SELECT COUNT(*) as totalDrivers FROM users WHERE role = ?', [Role.DRIVER]),
+      pool.execute('SELECT COUNT(*) as totalVehicles FROM vehicles WHERE status != "INACTIVE"'),
+      pool.execute('SELECT COUNT(*) as availableVehicles FROM vehicles WHERE status = "AVAILABLE"'),
+      pool.execute('SELECT COUNT(*) as driversOnTrip FROM driver_profiles WHERE status = "ON_TRIP"'),
+      pool.execute('SELECT SUM(totalAmount) as pendingPaymentsAmount FROM bookings WHERE paymentStatus = "PENDING" AND status = ?', [BookingStatus.TRIP_COMPLETED]),
+      pool.execute(`SELECT DATE(paymentDate) as paymentDate, SUM(amount) as amount FROM payments WHERE status = 'PAID' AND paymentDate >= DATE_SUB(NOW(), INTERVAL 180 DAY) GROUP BY DATE(paymentDate) ORDER BY paymentDate ASC`),
+      pool.execute('SELECT status, COUNT(id) as _count FROM bookings GROUP BY status'),
+      pool.execute(`SELECT b.*, c.fullName as customerName, vt.name as vehicleTypeName FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id LEFT JOIN vehicle_types vt ON b.vehicleTypeId = vt.id ORDER BY b.createdAt DESC LIMIT 10`)
+    ]);
 
-  sendSuccess(res, {
-    stats: {
-      todayBookings, upcomingTrips, activeTrips, completedToday, cancelledToday,
-      totalCustomers, totalDrivers, totalVehicles, availableVehicles, driversOnTrip,
-      pendingPaymentsAmount: pendingPayments._sum.totalAmount || 0,
-    },
-    charts: { monthlyRevenue, bookingsByStatus },
-    recentBookings,
-  });
+    const recentBookings = recentBookingsRaw.map((b: any) => ({
+      ...b, customer: b.customerName ? { fullName: b.customerName } : null, vehicleType: b.vehicleTypeName ? { name: b.vehicleTypeName } : null
+    }));
+    
+    const bookingsByStatus = bookingsByStatusRaw.map((b: any) => ({ status: b.status, _count: { id: b._count } }));
+    const monthlyRevenue = monthlyRevenueRaw.map((r: any) => ({ paymentDate: r.paymentDate, _sum: { amount: r.amount } }));
+
+    sendSuccess(res, {
+      stats: {
+        todayBookings, upcomingTrips, activeTrips, completedToday, cancelledToday,
+        totalCustomers, totalDrivers, totalVehicles, availableVehicles, driversOnTrip,
+        pendingPaymentsAmount: pendingPaymentsAmount || 0,
+      },
+      charts: { monthlyRevenue, bookingsByStatus },
+      recentBookings,
+    });
+  } catch (err) {
+    console.error(err);
+    sendError(res, 'Internal server error');
+  }
 };
 
 export const getCustomerDashboard = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user!.userId;
-  const profile = await prisma.customerProfile.findUnique({ where: { userId } });
-  if (!profile) { sendError(res, 'Profile not found', 404); return; }
+  try {
+    const [[profile]]: any = await pool.execute('SELECT id FROM customer_profiles WHERE userId = ?', [userId]);
+    if (!profile) { sendError(res, 'Profile not found', 404); return; }
 
-  const [activeBooking, upcomingBooking, recentBookings, totalBookings, pendingPayment, notifications] = await Promise.all([
-    prisma.booking.findFirst({ where: { customerId: profile.id, status: { in: [BookingStatus.TRIP_STARTED, BookingStatus.DRIVER_ON_THE_WAY, BookingStatus.ARRIVED] } }, include: { driver: { select: { fullName: true, user: { select: { mobile: true } } } }, vehicle: { select: { registrationNumber: true, make: true, model: true } } }, orderBy: { createdAt: 'desc' } }),
-    prisma.booking.findFirst({ where: { customerId: profile.id, pickupDate: { gte: new Date() }, status: { in: [BookingStatus.CONFIRMED, BookingStatus.DRIVER_ASSIGNED] } }, include: { driver: { select: { fullName: true } }, vehicle: { select: { registrationNumber: true, make: true, model: true } }, vehicleType: { select: { name: true } } }, orderBy: { pickupDate: 'asc' } }),
-    prisma.booking.findMany({ where: { customerId: profile.id }, orderBy: { createdAt: 'desc' }, take: 5, include: { vehicleType: { select: { name: true } } } }),
-    prisma.booking.count({ where: { customerId: profile.id } }),
-    prisma.booking.aggregate({ where: { customerId: profile.id, paymentStatus: { in: ['PENDING', 'PARTIALLY_PAID'] } }, _sum: { totalAmount: true } }),
-    prisma.notification.findMany({ where: { userId, isRead: false }, take: 5, orderBy: { createdAt: 'desc' } }),
-  ]);
+    const [
+      [activeBookingRaw],
+      [upcomingBookingRaw],
+      [recentBookingsRaw],
+      [[{ totalBookings }]],
+      [[{ pendingPaymentAmount }]],
+      [notifications]
+    ]: any = await Promise.all([
+      pool.execute(`SELECT b.*, d.fullName as driverName, u.mobile as driverMobile, v.registrationNumber, v.make, v.model FROM bookings b LEFT JOIN driver_profiles d ON b.driverId = d.id LEFT JOIN users u ON d.userId = u.id LEFT JOIN vehicles v ON b.vehicleId = v.id WHERE b.customerId = ? AND b.status IN (?, ?, ?) ORDER BY b.createdAt DESC LIMIT 1`, [profile.id, BookingStatus.TRIP_STARTED, BookingStatus.DRIVER_ON_THE_WAY, BookingStatus.ARRIVED]),
+      pool.execute(`SELECT b.*, d.fullName as driverName, v.registrationNumber, v.make, v.model, vt.name as vehicleTypeName FROM bookings b LEFT JOIN driver_profiles d ON b.driverId = d.id LEFT JOIN vehicles v ON b.vehicleId = v.id LEFT JOIN vehicle_types vt ON b.vehicleTypeId = vt.id WHERE b.customerId = ? AND b.pickupDate >= NOW() AND b.status IN (?, ?) ORDER BY b.pickupDate ASC LIMIT 1`, [profile.id, BookingStatus.CONFIRMED, BookingStatus.DRIVER_ASSIGNED]),
+      pool.execute(`SELECT b.*, vt.name as vehicleTypeName FROM bookings b LEFT JOIN vehicle_types vt ON b.vehicleTypeId = vt.id WHERE b.customerId = ? ORDER BY b.createdAt DESC LIMIT 5`, [profile.id]),
+      pool.execute(`SELECT COUNT(*) as totalBookings FROM bookings WHERE customerId = ?`, [profile.id]),
+      pool.execute(`SELECT SUM(totalAmount) as pendingPaymentAmount FROM bookings WHERE customerId = ? AND paymentStatus IN ('PENDING', 'PARTIALLY_PAID')`, [profile.id]),
+      pool.execute(`SELECT * FROM notifications WHERE userId = ? AND isRead = false ORDER BY createdAt DESC LIMIT 5`, [userId])
+    ]);
 
-  sendSuccess(res, { activeBooking, upcomingBooking, recentBookings, totalBookings, pendingPaymentAmount: pendingPayment._sum.totalAmount || 0, notifications });
+    const formatBooking = (b: any) => b ? ({ ...b, driver: b.driverName ? { fullName: b.driverName, user: b.driverMobile ? { mobile: b.driverMobile } : null } : null, vehicle: b.registrationNumber ? { registrationNumber: b.registrationNumber, make: b.make, model: b.model } : null, vehicleType: b.vehicleTypeName ? { name: b.vehicleTypeName } : null }) : null;
+
+    sendSuccess(res, { 
+      activeBooking: activeBookingRaw.length > 0 ? formatBooking(activeBookingRaw[0]) : null, 
+      upcomingBooking: upcomingBookingRaw.length > 0 ? formatBooking(upcomingBookingRaw[0]) : null, 
+      recentBookings: recentBookingsRaw.map(formatBooking), 
+      totalBookings, pendingPaymentAmount: pendingPaymentAmount || 0, notifications 
+    });
+  } catch (err) {
+    console.error(err);
+    sendError(res, 'Internal server error');
+  }
 };
 
 export const getDriverDashboard = async (req: Request, res: Response): Promise<void> => {
   const userId = req.user!.userId;
-  const driver = await prisma.driverProfile.findUnique({ where: { userId }, include: { assignedVehicle: { include: { vehicleType: true } } } });
-  if (!driver) { sendError(res, 'Driver profile not found', 404); return; }
+  try {
+    const [[driverRaw]]: any = await pool.execute(`SELECT dp.*, v.registrationNumber, v.make, v.model, vt.name as vehicleTypeName FROM driver_profiles dp LEFT JOIN vehicles v ON dp.assignedVehicleId = v.id LEFT JOIN vehicle_types vt ON v.vehicleTypeId = vt.id WHERE dp.userId = ?`, [userId]);
+    if (!driverRaw) { sendError(res, 'Driver profile not found', 404); return; }
 
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    const driver = { ...driverRaw, assignedVehicle: driverRaw.registrationNumber ? { registrationNumber: driverRaw.registrationNumber, make: driverRaw.make, model: driverRaw.model, vehicleType: driverRaw.vehicleTypeName ? { name: driverRaw.vehicleTypeName } : null } : null };
 
-  const [todayTrips, activeTrip, upcomingTrips, completedTrips, totalEarnings, notifications] = await Promise.all([
-    prisma.booking.count({ where: { driverId: driver.id, pickupDate: { gte: today, lt: tomorrow } } }),
-    prisma.booking.findFirst({ where: { driverId: driver.id, status: { in: [BookingStatus.TRIP_STARTED, BookingStatus.DRIVER_ON_THE_WAY, BookingStatus.ARRIVED, BookingStatus.DRIVER_ACCEPTED] } }, include: { customer: { select: { fullName: true, user: { select: { mobile: true } } } }, vehicle: { select: { registrationNumber: true, make: true, model: true } } }, orderBy: { createdAt: 'desc' } }),
-    prisma.booking.findMany({ where: { driverId: driver.id, pickupDate: { gte: new Date() }, status: { in: [BookingStatus.DRIVER_ASSIGNED, BookingStatus.CONFIRMED] } }, include: { customer: { select: { fullName: true } }, vehicleType: { select: { name: true } } }, orderBy: { pickupDate: 'asc' }, take: 5 }),
-    prisma.booking.count({ where: { driverId: driver.id, status: BookingStatus.TRIP_COMPLETED } }),
-    prisma.booking.aggregate({ where: { driverId: driver.id, status: BookingStatus.TRIP_COMPLETED }, _sum: { totalAmount: true } }),
-    prisma.notification.findMany({ where: { userId, isRead: false }, take: 5, orderBy: { createdAt: 'desc' } }),
-  ]);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
 
-  sendSuccess(res, { driver, todayTrips, activeTrip, upcomingTrips, completedTrips, totalEarnings: totalEarnings._sum.totalAmount || 0, notifications });
+    const [
+      [[{ todayTrips }]],
+      [activeTripRaw],
+      [upcomingTripsRaw],
+      [[{ completedTrips }]],
+      [[{ totalEarnings }]],
+      [notifications]
+    ]: any = await Promise.all([
+      pool.execute(`SELECT COUNT(*) as todayTrips FROM bookings WHERE driverId = ? AND pickupDate >= ? AND pickupDate < ?`, [driver.id, today, tomorrow]),
+      pool.execute(`SELECT b.*, c.fullName as customerName, u.mobile as customerMobile, v.registrationNumber, v.make, v.model FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id LEFT JOIN users u ON c.userId = u.id LEFT JOIN vehicles v ON b.vehicleId = v.id WHERE b.driverId = ? AND b.status IN (?, ?, ?, ?) ORDER BY b.createdAt DESC LIMIT 1`, [driver.id, BookingStatus.TRIP_STARTED, BookingStatus.DRIVER_ON_THE_WAY, BookingStatus.ARRIVED, BookingStatus.DRIVER_ACCEPTED]),
+      pool.execute(`SELECT b.*, c.fullName as customerName, vt.name as vehicleTypeName FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id LEFT JOIN vehicle_types vt ON b.vehicleTypeId = vt.id WHERE b.driverId = ? AND b.pickupDate >= NOW() AND b.status IN (?, ?) ORDER BY b.pickupDate ASC LIMIT 5`, [driver.id, BookingStatus.DRIVER_ASSIGNED, BookingStatus.CONFIRMED]),
+      pool.execute(`SELECT COUNT(*) as completedTrips FROM bookings WHERE driverId = ? AND status = ?`, [driver.id, BookingStatus.TRIP_COMPLETED]),
+      pool.execute(`SELECT SUM(totalAmount) as totalEarnings FROM bookings WHERE driverId = ? AND status = ?`, [driver.id, BookingStatus.TRIP_COMPLETED]),
+      pool.execute(`SELECT * FROM notifications WHERE userId = ? AND isRead = false ORDER BY createdAt DESC LIMIT 5`, [userId])
+    ]);
+
+    const formatActive = (b: any) => b ? ({ ...b, customer: b.customerName ? { fullName: b.customerName, user: b.customerMobile ? { mobile: b.customerMobile } : null } : null, vehicle: b.registrationNumber ? { registrationNumber: b.registrationNumber, make: b.make, model: b.model } : null }) : null;
+    const formatUpcoming = (b: any) => b ? ({ ...b, customer: b.customerName ? { fullName: b.customerName } : null, vehicleType: b.vehicleTypeName ? { name: b.vehicleTypeName } : null }) : null;
+
+    sendSuccess(res, { 
+      driver, todayTrips, 
+      activeTrip: activeTripRaw.length > 0 ? formatActive(activeTripRaw[0]) : null, 
+      upcomingTrips: upcomingTripsRaw.map(formatUpcoming), 
+      completedTrips, totalEarnings: totalEarnings || 0, notifications 
+    });
+  } catch (err) {
+    console.error(err);
+    sendError(res, 'Internal server error');
+  }
 };

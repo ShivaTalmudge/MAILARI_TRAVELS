@@ -1,5 +1,5 @@
-import { prisma } from '../config/prisma';
-import { Role } from '@prisma/client';
+import { pool } from '../config/db';
+import { Role } from '../types';
 
 interface AuditData {
   userId?: string;
@@ -15,52 +15,63 @@ interface AuditData {
 
 export const createAuditLog = async (data: AuditData): Promise<void> => {
   try {
-    await prisma.auditLog.create({
-      data: {
-        userId: data.userId,
-        userRole: data.userRole,
-        action: data.action,
-        entity: data.entity,
-        entityId: data.entityId,
-        description: data.description,
-        metadata: data.metadata as object,
-        ipAddress: data.ipAddress,
-        userAgent: data.userAgent,
-      },
-    });
+    const { v4: uuidv4 } = await import('uuid');
+    const id = uuidv4();
+    await pool.execute(
+      `INSERT INTO audit_logs (id, userId, userRole, action, entity, entityId, description, metadata, ipAddress, userAgent, createdAt) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        id, 
+        data.userId || null, 
+        data.userRole || null, 
+        data.action, 
+        data.entity, 
+        data.entityId || null, 
+        data.description, 
+        data.metadata ? JSON.stringify(data.metadata) : null, 
+        data.ipAddress || null, 
+        data.userAgent || null
+      ]
+    );
   } catch (error) {
-    // Audit logging should never crash the application
     console.error('Failed to write audit log:', error);
   }
 };
 
-const randomSuffix = (): string => Math.random().toString(36).substr(2, 4).toUpperCase();
+const randomSuffix = (): string => Math.random().toString(36).substring(2, 6).toUpperCase();
 
 export const generateBookingNumber = async (): Promise<string> => {
   const date = new Date();
   const year = date.getFullYear().toString().slice(-2);
   const month = String(date.getMonth() + 1).padStart(2, '0');
-  // Use DB count + random suffix to avoid collisions under concurrent load
-  const count = await prisma.booking.count();
+  
+  const [rows]: any = await pool.execute('SELECT COUNT(*) as count FROM bookings');
+  const count = rows[0].count;
   const seq = String(count + 1).padStart(4, '0');
+  
   return `MT-${year}${month}-${seq}-${randomSuffix()}`;
 };
 
 export const generateInvoiceNumber = async (): Promise<string> => {
-  const settings = await prisma.systemSetting.findUnique({ where: { key: 'invoice_prefix' } });
-  const prefix = settings?.value || 'INV';
-  const count = await prisma.invoice.count();
+  const [settings]: any = await pool.execute('SELECT value FROM system_settings WHERE `key` = ?', ['invoice_prefix']);
+  const prefix = settings.length > 0 ? settings[0].value : 'INV';
+  
+  const [rows]: any = await pool.execute('SELECT COUNT(*) as count FROM invoices');
+  const count = rows[0].count;
   const year = new Date().getFullYear().toString().slice(-2);
+  
   return `${prefix}-${year}-${String(count + 1).padStart(5, '0')}`;
 };
 
 export const generatePaymentNumber = async (): Promise<string> => {
-  const count = await prisma.payment.count();
+  const [rows]: any = await pool.execute('SELECT COUNT(*) as count FROM payments');
+  const count = rows[0].count;
   return `PAY-${Date.now()}-${String(count + 1).padStart(4, '0')}`;
 };
 
 export const generateTicketNumber = async (): Promise<string> => {
-  const count = await prisma.supportTicket.count();
+  const [rows]: any = await pool.execute('SELECT COUNT(*) as count FROM support_tickets');
+  const count = rows[0].count;
   return `TKT-${String(count + 1).padStart(5, '0')}`;
 };
 

@@ -1,11 +1,11 @@
-import { prisma } from '../config/prisma';
-import { TripType } from '@prisma/client';
+import { pool } from '../config/db';
+import { TripType } from '../types';
 
 interface PricingInput {
   vehicleTypeId: string;
   tripType: TripType;
-  estimatedDistance?: number;   // km
-  estimatedDuration?: number;   // hours
+  estimatedDistance?: number;
+  estimatedDuration?: number;
   isNightTrip?: boolean;
   hasAirport?: boolean;
   hasStateCrossing?: boolean;
@@ -36,13 +36,11 @@ interface PricingOutput {
 }
 
 export const calculateFare = async (input: PricingInput): Promise<PricingOutput> => {
-  // Get pricing rule
-  const rule = await prisma.pricingRule.findUnique({
-    where: { vehicleTypeId_tripType: { vehicleTypeId: input.vehicleTypeId, tripType: input.tripType } },
-  });
+  const [rules]: any = await pool.execute('SELECT * FROM pricing_rules WHERE vehicleTypeId = ? AND tripType = ?', [input.vehicleTypeId, input.tripType]);
+  const rule = rules.length > 0 ? rules[0] : null;
 
-  // Get default tax config
-  const taxConfig = await prisma.taxConfig.findFirst({ where: { isActive: true, isDefault: true } });
+  const [taxConfigs]: any = await pool.execute('SELECT * FROM tax_configs WHERE isActive = true AND isDefault = true');
+  const taxConfig = taxConfigs.length > 0 ? taxConfigs[0] : null;
 
   const baseFare = Number(rule?.baseFare || 0);
   const distanceCharges = rule && input.estimatedDistance ? Number(rule.perKmRate) * input.estimatedDistance : 0;
