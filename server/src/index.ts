@@ -111,10 +111,6 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/settings', settingRoutes);
 
-// ── Error Handling ────────────────────────────────────
-app.use(notFoundHandler);
-app.use(errorHandler);
-
 // ── Static Frontend Serving (Production) ──────────────
 import path from 'path';
 if (config.nodeEnv === 'production') {
@@ -122,12 +118,20 @@ if (config.nodeEnv === 'production') {
   app.use(express.static(clientDistPath));
   
   // Catch-all route to serve React's index.html for non-API routes
-  app.get('*', (req, res) => {
+  app.get('*', (req, res, next) => {
     if (!req.path.startsWith('/api')) {
       res.sendFile(path.join(clientDistPath, 'index.html'));
+    } else {
+      next(); // Continue to API 404 handler if it's an API route
     }
   });
 }
+
+// ── Error Handling ────────────────────────────────────
+app.use(notFoundHandler);
+app.use(errorHandler);
+
+// Moved to above Error Handlers
 
 // ── Start Server ──────────────────────────────────────
 const startServer = async () => {
