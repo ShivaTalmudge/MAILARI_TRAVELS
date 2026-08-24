@@ -55,11 +55,16 @@ export default function AdminBookings() {
   const columns: Column<Booking>[] = [
     { key: 'bookingNumber', label: 'Booking ID', render: (row) => <span className="font-medium">{row.bookingNumber}</span> },
     { key: 'customer', label: 'Customer', render: (row) => <div><p className="font-medium">{row.customer.fullName}</p></div> },
-    { key: 'schedule', label: 'Schedule', render: (row) => <div className="text-sm">
-        <p>{format(new Date(row.pickupDate), 'dd MMM yyyy')}</p>
-        <p className="text-slate-500">{row.pickupTime}</p>
-      </div> 
-    },
+    { key: 'schedule', label: 'Schedule', render: (row) => {
+      let dateStr = '—';
+      try { if (row.pickupDate) dateStr = format(new Date(row.pickupDate), 'dd MMM yyyy'); } catch (e) {}
+      return (
+        <div className="text-sm">
+          <p>{dateStr}</p>
+          <p className="text-slate-500">{row.pickupTime}</p>
+        </div> 
+      );
+    }},
     { key: 'route', label: 'Route', render: (row) => <div className="max-w-[200px] truncate" title={row.pickupLocation}>{row.pickupLocation}</div> },
     { key: 'driver', label: 'Driver / Vehicle', render: (row) => (
       <div className="text-sm">

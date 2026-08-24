@@ -66,13 +66,19 @@ export default function AdminCustomers() {
     { key: 'fullName', label: 'Name', render: (row) => <span className="font-medium">{row.fullName}</span> },
     { key: 'contact', label: 'Contact Info', render: (row) => (
       <div>
-        <p>{row.user.mobile}</p>
-        {row.user.email && <p className="text-xs text-slate-500">{row.user.email}</p>}
+        <p>{row.user?.mobile || 'No Mobile'}</p>
+        {row.user?.email && <p className="text-xs text-slate-500">{row.user.email}</p>}
       </div>
     )},
-    { key: 'joined', label: 'Joined', render: (row) => <span>{format(new Date(row.user.createdAt), 'dd MMM yyyy')}</span> },
+    { key: 'joined', label: 'Joined', render: (row) => {
+      try {
+        return <span>{row.user?.createdAt ? format(new Date(row.user.createdAt), 'dd MMM yyyy') : '—'}</span>;
+      } catch (e) {
+        return <span>—</span>;
+      }
+    }},
     { key: 'bookings', label: 'Total Bookings', render: (row) => <span>{row.totalBookings || 0}</span> },
-    { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.user.isActive ? 'ACTIVE' : 'INACTIVE'} /> },
+    { key: 'status', label: 'Status', render: (row) => <StatusBadge status={row.user?.isActive ? 'ACTIVE' : 'INACTIVE'} /> },
   ];
 
   return (

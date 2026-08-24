@@ -15,5 +15,7 @@ router.get('/:id', authorize('ADMIN', 'DRIVER'), ctrl.getVehicleById);
 router.put('/:id', authorize('ADMIN'), validate(updateVehicleSchema), ctrl.updateVehicle);
 router.patch('/:id/status', authorize('ADMIN'), ctrl.updateVehicleStatus);
 router.post('/:id/documents', authorize('ADMIN'), ctrl.addVehicleDocument);
+router.get('/:id/maintenance', authorize('ADMIN', 'DRIVER'), ctrl.getVehicleMaintenance);
+router.post('/:id/maintenance', authorize('ADMIN'), ctrl.addVehicleMaintenance);
 
 export default router;

@@ -238,3 +238,50 @@ export const addVehicleDocument = async (req: Request, res: Response): Promise<v
     sendError(res, 'Internal server error');
   }
 };
+
+export const getVehicleMaintenance = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const [records]: any = await pool.execute(
+      'SELECT * FROM vehicle_maintenance WHERE vehicleId = ? ORDER BY serviceDate DESC', [id]
+    );
+    sendSuccess(res, records);
+  } catch (err) {
+    console.error(err);
+    sendError(res, 'Internal server error');
+  }
+};
+
+export const addVehicleMaintenance = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { serviceDate, odometer, serviceType, cost, notes, nextServiceDate, nextServiceOdometer } = req.body;
+  const maintId = uuidv4();
+  
+  try {
+    const [[vehicle]]: any = await pool.execute('SELECT id FROM vehicles WHERE id = ?', [id]);
+    if (!vehicle) { sendNotFound(res, 'Vehicle not found'); return; }
+
+    await pool.execute(
+      `INSERT INTO vehicle_maintenance (id, vehicleId, serviceDate, odometer, serviceType, cost, notes, nextServiceDate, nextServiceOdometer, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [
+        maintId, id, new Date(serviceDate), parseInt(odometer), serviceType, 
+        parseFloat(cost || '0'), notes || null, 
+        nextServiceDate ? new Date(nextServiceDate) : null, 
+        nextServiceOdometer ? parseInt(nextServiceOdometer) : null
+      ]
+    );
+    
+    // Also update currentOdometer on vehicle if the maintenance odometer is higher
+    await pool.execute(
+      `UPDATE vehicles SET currentOdometer = GREATEST(COALESCE(currentOdometer, 0), ?) WHERE id = ?`,
+      [parseInt(odometer), id]
+    );
+
+    await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'UPDATE', entity: 'Vehicle', entityId: id, description: `Maintenance record added: ${serviceType}`, ipAddress: req.ip });
+    sendCreated(res, { id: maintId }, 'Maintenance record added');
+  } catch (err) {
+    console.error(err);
+    sendError(res, 'Internal server error');
+  }
+};

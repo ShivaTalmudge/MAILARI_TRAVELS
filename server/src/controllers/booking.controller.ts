@@ -129,10 +129,10 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
         [
           id, bookingNumber, customerId, data.vehicleTypeId, data.tripType, BookingStatus.PENDING,
           data.pickupLocation, data.pickupLat ?? null, data.pickupLng ?? null,
-          data.dropLocation, data.dropLat ?? null, data.dropLng ?? null,
+          data.dropLocation ?? null, data.dropLat ?? null, data.dropLng ?? null,
           new Date(data.pickupDate), data.pickupTime,
           data.returnDate ? new Date(data.returnDate) : null, parseInt(data.passengerCount || '1'), parseInt(data.luggageCount || '0'), data.estimatedDistance ? parseFloat(data.estimatedDistance) : null, data.estimatedDuration ? parseInt(data.estimatedDuration) : null,
-          data.flightNumber || null, data.flightType || null, fareResult.baseFare, fareResult.distanceCharges, fareResult.driverAllowance, fareResult.tollCharges, fareResult.parkingCharges, fareResult.airportCharges, fareResult.nightCharges, fareResult.statePermitCharges, fareResult.extraCharges, fareResult.discount, fareResult.subtotal, fareResult.taxAmount, fareResult.totalAmount, data.specialInstructions || null
+          data.flightNumber ?? null, data.flightType ?? null, fareResult.baseFare, fareResult.distanceCharges, fareResult.driverAllowance, fareResult.tollCharges, fareResult.parkingCharges, fareResult.airportCharges, fareResult.nightCharges, fareResult.statePermitCharges, fareResult.extraCharges, fareResult.discount, fareResult.subtotal, fareResult.taxAmount, fareResult.totalAmount, data.specialInstructions ?? null
         ]
       );
       await connection.execute(

@@ -25,8 +25,12 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-      useAuthStore.getState().logout();
-      window.location.href = '/login/customer'; // Default redirect
+      // Do not trigger global logout/redirect if the user is actively trying to log in or register
+      const url = error.config?.url || '';
+      if (!url.includes('/auth/login') && !url.includes('/auth/register') && !url.includes('/auth/google-login')) {
+        useAuthStore.getState().logout();
+        window.location.href = '/login/customer'; // Default redirect
+      }
     }
     return Promise.reject(error);
   }
