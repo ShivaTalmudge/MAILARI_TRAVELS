@@ -4,6 +4,7 @@ import path from 'path';
 // Try loading from root directory first, then fallback to server directory
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env.production') });
 
 const isProd = process.env.NODE_ENV === 'production';
 
