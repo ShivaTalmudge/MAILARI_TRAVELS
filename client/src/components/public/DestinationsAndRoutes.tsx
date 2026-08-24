@@ -4,9 +4,9 @@ import { Button } from '../ui/Button';
 
 export default function DestinationsAndRoutes() {
   const destinations = [
-    { name: 'Mysuru', desc: 'The Heritage City', image: 'https://images.unsplash.com/photo-1598257006458-087169a1f08d?auto=format&fit=crop&q=80&w=600' },
-    { name: 'Ooty', desc: 'Queen of Hill Stations', image: 'https://images.unsplash.com/photo-1522030299830-16b8d3d049fe?auto=format&fit=crop&q=80&w=600' },
-    { name: 'Coorg', desc: 'Scotland of India', image: 'https://images.unsplash.com/photo-1627896157734-44b462c18db3?auto=format&fit=crop&q=80&w=600' },
+    { name: 'Mysuru', desc: 'The Heritage City', image: '/images/destinations/mysuru.jpg' },
+    { name: 'Ooty', desc: 'Queen of Hill Stations', image: '/images/destinations/ooty.jpg' },
+    { name: 'Coorg', desc: 'Scotland of India', image: '/images/destinations/coorg.jpg' },
   ];
 
   const routes = [
