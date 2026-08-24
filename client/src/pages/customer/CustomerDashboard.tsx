@@ -81,7 +81,7 @@ export default function CustomerDashboard() {
             </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-100 grid grid-cols-2 gap-4">
+          <div className="pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {trip.driver && (
               <div>
                 <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Your Driver</p>

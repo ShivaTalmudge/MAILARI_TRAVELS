@@ -43,7 +43,7 @@ export default function DriverVehicle() {
             <CardTitle>Vehicle Information</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4">
               <div>
                 <p className="text-sm text-slate-500">Registration No.</p>
                 <p className="font-semibold text-lg">{vehicle.registrationNumber}</p>

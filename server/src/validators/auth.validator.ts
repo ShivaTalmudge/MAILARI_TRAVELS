@@ -61,15 +61,15 @@ export const createDriverSchema = z.object({
   email: z.string().email().optional().or(z.literal('')),
   password: strongPassword,
   licenceNumber: z.string().min(5, 'Licence number is required'),
-  licenceExpiry: z.string().datetime(),
-  dateOfBirth: z.string().datetime().optional(),
+  licenceExpiry: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  dateOfBirth: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).or(z.literal('')).optional(),
   address: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
   pincode: z.string().regex(/^\d{6}$/).optional().or(z.literal('')),
   emergencyContact: z.string().optional(),
   emergencyName: z.string().optional(),
-  joiningDate: z.string().datetime().optional(),
+  joiningDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).or(z.literal('')).optional(),
 });
 
 export { indianMobile, strongPassword };
