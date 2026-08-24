@@ -5,7 +5,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 import { useAuthStore } from '../../features/auth/authStore';
-import { useToast } from '../../components/ui/Toast';
+import { useBookingDraftStore } from '../../features/booking/bookingDraftStore';
+import { useToast } from '../../hooks/useToast';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
@@ -22,6 +23,7 @@ type RegisterValues = z.infer<typeof registerSchema>;
 export default function RegisterPage() {
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();
+  const draft = useBookingDraftStore((s) => s.draft);
   const toast = useToast();
   const [isLoading, setIsLoading] = useState(false);
 
@@ -53,7 +55,7 @@ export default function RegisterPage() {
       const { user, token } = res.data.data;
       setAuth(user, token);
       toast(`Welcome, ${user.fullName || 'User'}!`, 'success');
-      navigate(`/${user.role.toLowerCase()}/dashboard`);
+      navigate(draft?.pickupLocation ? '/customer/bookings/new' : `/${user.role.toLowerCase()}/dashboard`);
     } catch (error: any) {
       toast(error.response?.data?.message || 'Google Registration failed. Please try again.', 'error');
     } finally {

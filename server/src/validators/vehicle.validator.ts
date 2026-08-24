@@ -21,3 +21,10 @@ export const createVehicleSchema = z.object({
   currentOdometer: z.union([z.string(), z.number()]).transform(val => Number(val)).optional(),
   notes: z.string().optional(),
 });
+
+// Updates are partial by design (the controller COALESCEs each field
+// against the existing row) — registrationNumber/vehicleTypeId are
+// intentionally excluded since neither is editable after creation.
+export const updateVehicleSchema = createVehicleSchema
+  .omit({ registrationNumber: true, vehicleTypeId: true })
+  .partial();

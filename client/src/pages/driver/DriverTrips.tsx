@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import api from '../../services/api';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Button } from '../../components/ui/Button';
-import { useToast } from '../../components/ui/Toast';
-import { Navigation } from 'lucide-react';
+import { useToast } from '../../hooks/useToast';
+import { Navigation, Eye } from 'lucide-react';
 
 interface Trip {
   id: string;
@@ -27,7 +28,7 @@ export default function DriverTrips() {
   const limit = 10;
   const toast = useToast();
 
-  const fetchTrips = async () => {
+  const fetchTrips = useCallback(async () => {
     try {
       setIsLoading(true);
       // Ensure the endpoint gets bookings assigned to this driver
@@ -42,11 +43,11 @@ export default function DriverTrips() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [page, toast]);
 
   useEffect(() => {
     fetchTrips();
-  }, [page]);
+  }, [fetchTrips]);
 
   const updateStatus = async (tripId: string, status: string) => {
     try {
@@ -110,6 +111,11 @@ export default function DriverTrips() {
                  <Navigation className="h-4 w-4" /> Start
                </Button>
             )}
+            <Link to={`/driver/trips/${row.id}`}>
+              <Button size="sm" variant="ghost" className="gap-1">
+                <Eye className="h-4 w-4" /> View
+              </Button>
+            </Link>
           </div>
         )}
       />

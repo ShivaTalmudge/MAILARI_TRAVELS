@@ -5,7 +5,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 import { useAuthStore } from '../../features/auth/authStore';
-import { useToast } from '../../components/ui/Toast';
+import { useBookingDraftStore } from '../../features/booking/bookingDraftStore';
+import { useToast } from '../../hooks/useToast';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import api from '../../services/api';
@@ -27,8 +28,17 @@ export default function LoginPage() {
   const { role } = useParams<{ role: string }>();
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();
+  const draft = useBookingDraftStore((s) => s.draft);
   const toast = useToast();
   const [isLoading, setIsLoading] = useState(false);
+
+  const postLoginRedirect = (userRole: string) => {
+    if (userRole === 'CUSTOMER' && draft?.pickupLocation) {
+      navigate('/customer/bookings/new');
+    } else {
+      navigate(`/${userRole.toLowerCase()}/dashboard`);
+    }
+  };
 
   const roleKey = (role as keyof typeof ROLE_CONFIG) || 'customer';
   const roleConfig = ROLE_CONFIG[roleKey] || ROLE_CONFIG.customer;
@@ -45,7 +55,7 @@ export default function LoginPage() {
       const { user, token } = res.data.data;
       setAuth(user, token);
       toast(`Welcome back, ${user.fullName || 'User'}!`, 'success');
-      navigate(`/${user.role.toLowerCase()}/dashboard`);
+      postLoginRedirect(user.role);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
       toast(err.response?.data?.message || 'Invalid credentials. Please try again.', 'error');
@@ -64,7 +74,7 @@ export default function LoginPage() {
       const { user, token } = res.data.data;
       setAuth(user, token);
       toast(`Welcome back, ${user.fullName || 'User'}!`, 'success');
-      navigate(`/${user.role.toLowerCase()}/dashboard`);
+      postLoginRedirect(user.role);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { message?: string } } };
       toast(err.response?.data?.message || 'Google Login failed. Please try again.', 'error');

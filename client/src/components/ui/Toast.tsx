@@ -1,13 +1,7 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { useState, useCallback, ReactNode } from 'react';
 import { CheckCircle2, XCircle, AlertCircle, Info, X } from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
-
-type ToastType = 'success' | 'error' | 'warning' | 'info';
+import { cn } from '../../lib/utils';
+import { ToastContext, type ToastType } from '../../hooks/useToast';
 
 interface Toast {
   id: string;
@@ -15,17 +9,11 @@ interface Toast {
   message: string;
 }
 
-interface ToastContextType {
-  toast: (message: string, type?: ToastType) => void;
-}
-
-const ToastContext = createContext<ToastContextType | undefined>(undefined);
-
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const toast = useCallback((message: string, type: ToastType = 'info') => {
-    const id = Math.random().toString(36).substr(2, 9);
+    const id = Math.random().toString(36).slice(2, 11);
     setToasts((prev) => [...prev, { id, type, message }]);
 
     setTimeout(() => {
@@ -56,9 +44,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             {t.type === 'error' && <XCircle className="h-5 w-5" />}
             {t.type === 'warning' && <AlertCircle className="h-5 w-5" />}
             {t.type === 'info' && <Info className="h-5 w-5" />}
-            
+
             <p className="flex-1">{t.message}</p>
-            
+
             <button
               onClick={() => removeToast(t.id)}
               className="ml-auto text-white/80 hover:text-white transition-colors"
@@ -70,12 +58,4 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       </div>
     </ToastContext.Provider>
   );
-}
-
-export function useToast() {
-  const context = useContext(ToastContext);
-  if (context === undefined) {
-    throw new Error('useToast must be used within a ToastProvider');
-  }
-  return context.toast;
 }

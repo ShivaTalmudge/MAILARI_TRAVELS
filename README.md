@@ -16,7 +16,7 @@ A full-stack, scalable commercial travel and fleet management platform designed 
 ### Backend
 - **Node.js** with **Express.js**
 - **TypeScript** with strict compiler checks
-- **Prisma ORM** for type-safe database access
+- **mysql2** with raw parameterized SQL for database access (no ORM)
 - **MySQL** as the primary relational database
 - **JWT** (JSON Web Tokens) for stateless authentication
 - **Zod** for request payload validation
@@ -24,9 +24,10 @@ A full-stack, scalable commercial travel and fleet management platform designed 
 
 ## Architecture Highlights
 This application enforces strict security and architectural patterns:
-1. **Server-Side Pricing Engine:** Clients cannot dictate prices. Fares are calculated dynamically on the server based on `vehicleType` and `tripType` utilizing a centralized `PricingService`.
-2. **Booking State Machine:** A robust finite state machine controls booking transitions (`CONFIRMED` -> `DRIVER_ASSIGNED` -> `TRIP_STARTED` -> `TRIP_COMPLETED`). Invalid transitions are blocked at the controller layer.
-3. **Layered Architecture:** Controllers parse requests, Services execute domain logic, and Prisma handles persistence.
+1. **Server-Side Pricing Engine:** Clients cannot dictate prices. Fares are calculated dynamically on the server based on `vehicleType` and `tripType`.
+2. **Booking State Machine:** A finite state machine controls booking transitions (`CONFIRMED` -> `DRIVER_ASSIGNED` -> `TRIP_STARTED` -> `TRIP_COMPLETED`). Invalid transitions are blocked at the controller layer.
+3. **Layered Architecture:** Controllers parse requests and validate access; the mysql2 connection pool (`server/src/config/db.ts`) handles persistence via parameterized queries.
+4. **SQL migrations, not an ORM:** Schema changes live as sequential files in `database/migrations/`, applied by a small runner script — see below.
 
 ---
 
@@ -38,16 +39,17 @@ This application enforces strict security and architectural patterns:
 
 ### 1. Database Setup
 1. Create a MySQL database (e.g., `mailaritravels`).
-2. Update the `DATABASE_URL` in `server/.env`.
+2. Copy `server/.env.example` to `server/.env` and set `DATABASE_URL` (or the discrete `DB_HOST`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`/`DB_PORT` variables).
+3. Apply the schema:
+   ```bash
+   npm run db:migrate
+   ```
+   This runs every file under `database/migrations/` in order and tracks what's been applied in a `schema_migrations` table, so it's safe to re-run after pulling new migrations.
 
 ### 2. Server Setup
 ```bash
 cd server
 npm install
-cp .env.example .env
-# Edit .env with your local/production credentials
-npm run prisma:generate
-npm run prisma:push
 npm run dev
 ```
 
@@ -55,39 +57,38 @@ npm run dev
 ```bash
 cd client
 npm install
-cp .env.example .env
-# Ensure VITE_API_URL points to your server (default: http://localhost:5000/api)
 npm run dev
 ```
 
-### 4. Default Admin User
-Run the database seed script to populate default data, including the admin user:
+### 4. Seeding accounts
+
+**Development** — demo admin/driver/customer accounts (all password `password123`):
 ```bash
-cd server
-npm run prisma:seed
+npm run db:seed:dev
 ```
-**Admin Credentials:**
-- **Email:** admin@mailari.com
-- **Password:** Admin@123
+This refuses to run when `NODE_ENV=production`.
+
+**Production** — create a real admin account with your own credentials (never a checked-in password):
+```bash
+ADMIN_EMAIL=you@company.com ADMIN_MOBILE=9999999999 ADMIN_PASSWORD='a-strong-password' npm run db:create-admin
+```
 
 ---
 
 ## Production Deployment (Hostinger Web Apps)
 
 ### Preparing the Build
-1. Build the frontend:
-   ```bash
-   cd client
-   npm run build
-   ```
-2. Build the backend:
-   ```bash
-   cd server
-   npx tsc
-   ```
+From the repo root:
+```bash
+npm run build
+```
+This builds the client (`client/dist`) and compiles the server (`server/dist`).
 
 ### Hostinger Configuration
-- Upload the `server/dist` folder alongside your `package.json` and `prisma` folder to your Hostinger Web App root.
-- Run `npm install --production` and `npx prisma generate` on the server.
-- Serve the `client/dist` folder using a static web server or host it on Hostinger's standard web hosting panel.
-- Ensure your `.env` secrets on Hostinger match your production environment.
+1. Upload the repo (excluding `.git`, `node_modules`, and any `.env*` file) to the Hostinger Web App root. `.gitignore` already excludes these from version control.
+2. Set environment variables in the Hostinger Node app panel — see `.env.example` / `server/.env.example` for the full list (database, `JWT_SECRET`, `CLIENT_URL`, SMTP, WhatsApp, upload directory, rate limits). Do not reuse any placeholder value from the example files.
+3. Run `npm run install:all` (or let Hostinger's build step run `npm install`, which triggers `postinstall`).
+4. Apply the schema: `npm run db:migrate`.
+5. Create the first admin account: `npm run db:create-admin` (see above) — do **not** run `db:seed:dev` in production.
+6. Set the app's start command to `node server.js` (the root `server.js` requires the compiled `server/dist/index.js`). In production the server also serves `client/dist` as static files and handles SPA routing for non-`/api` paths.
+7. Verify `GET /api/health` (process liveness) and `GET /api/health/ready` (confirms the database is actually reachable) both return 200 before pointing traffic at the app.

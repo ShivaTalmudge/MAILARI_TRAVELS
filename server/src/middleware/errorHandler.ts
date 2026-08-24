@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { MulterError } from 'multer';
 import { config } from '../config/env';
 
 export class AppError extends Error {
@@ -24,19 +25,18 @@ export const errorHandler = (err: Error, _req: Request, res: Response, _next: Ne
     return;
   }
 
-  // Prisma unique constraint
-  if ((err as { code?: string }).code === 'P2002') {
-    const fields = ((err as { meta?: { target?: string[] } }).meta?.target || []).join(', ');
-    res.status(409).json({
-      success: false,
-      message: `A record with this ${fields} already exists.`,
-    });
+  // File upload validation (wrong type, too large) — a client error, not a server fault
+  if (err instanceof MulterError || /Only PNG, JPEG, or WEBP/.test(err.message)) {
+    res.status(400).json({ success: false, message: err.message });
     return;
   }
 
-  // Prisma record not found
-  if ((err as { code?: string }).code === 'P2025') {
-    res.status(404).json({ success: false, message: 'Record not found.' });
+  // mysql2 unique constraint violation
+  if ((err as { code?: string }).code === 'ER_DUP_ENTRY') {
+    res.status(409).json({
+      success: false,
+      message: 'A record with this value already exists.',
+    });
     return;
   }
 

@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Button } from '../../components/ui/Button';
-import { useToast } from '../../components/ui/Toast';
-import { Eye, Edit, Plus } from 'lucide-react';
+import { useToast } from '../../hooks/useToast';
+import { Eye, Plus } from 'lucide-react';
+import AddVehicleModal from './AddVehicleModal';
+import VehicleDetailModal from './VehicleDetailModal';
 
 interface Vehicle {
   id: string;
@@ -26,8 +28,10 @@ export default function AdminVehicles() {
   const [totalPages, setTotalPages] = useState(1);
   const limit = 10;
   const toast = useToast();
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [viewingVehicleId, setViewingVehicleId] = useState<string | null>(null);
 
-  const fetchVehicles = async () => {
+  const fetchVehicles = useCallback(async () => {
     try {
       setIsLoading(true);
       const { data } = await api.get('/vehicles', { params: { page, limit, search } });
@@ -41,11 +45,11 @@ export default function AdminVehicles() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [page, search, toast]);
 
   useEffect(() => {
     fetchVehicles();
-  }, [page, search]);
+  }, [fetchVehicles]);
 
   const columns: Column<Vehicle>[] = [
     { key: 'regNo', label: 'Registration No.', render: (row) => <span className="font-semibold text-slate-800">{row.registrationNumber}</span> },
@@ -58,7 +62,7 @@ export default function AdminVehicles() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight text-slate-900">Vehicles</h1>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => setShowAddModal(true)}>
           <Plus className="h-4 w-4" />
           Add Vehicle
         </Button>
@@ -78,17 +82,19 @@ export default function AdminVehicles() {
           limit,
           onPageChange: setPage
         }}
-        actions={() => (
+        actions={(row) => (
           <div className="flex justify-end gap-2">
-            <Button variant="outline" size="icon" title="View Details">
+            <Button variant="outline" size="icon" title="View Details" onClick={() => setViewingVehicleId(row.id)}>
               <Eye className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="icon" title="Edit Vehicle">
-              <Edit className="h-4 w-4" />
             </Button>
           </div>
         )}
       />
+
+      {showAddModal && <AddVehicleModal onClose={() => setShowAddModal(false)} onCreated={fetchVehicles} />}
+      {viewingVehicleId && (
+        <VehicleDetailModal vehicleId={viewingVehicleId} onClose={() => setViewingVehicleId(null)} onChanged={fetchVehicles} />
+      )}
     </div>
   );
 }

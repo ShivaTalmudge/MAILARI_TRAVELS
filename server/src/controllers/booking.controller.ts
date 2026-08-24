@@ -1,8 +1,12 @@
 import { Request, Response } from 'express';
 import { pool } from '../config/db';
-import { sendSuccess, sendCreated, sendNotFound, sendError } from '../utils/response';
-import { getPaginationParams, generateBookingNumber, createAuditLog } from '../utils/helpers';
-import { createNotification } from '../services/notification.service';
+import { sendSuccess, sendCreated, sendNotFound, sendError, sendForbidden } from '../utils/response';
+import { getPaginationParams, generateBookingNumber, generatePaymentNumber, createAuditLog } from '../utils/helpers';
+import {
+  createNotification, sendBookingConfirmation, sendBookingReceivedEmail,
+  sendBookingConfirmedEmail, sendDriverAssignment, sendBookingCancellation,
+  sendPaymentConfirmation, sendPaymentReceivedEmail,
+} from '../services/notification.service';
 import { BookingStatus, Role, NotificationType, DriverStatus, VehicleStatus } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -120,10 +124,13 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
     try {
       await connection.beginTransaction();
       await connection.execute(
-        `INSERT INTO bookings (id, bookingNumber, customerId, vehicleTypeId, tripType, status, pickupLocation, dropLocation, pickupDate, pickupTime, returnDate, passengerCount, luggageCount, estimatedDistance, estimatedDuration, flightNumber, flightType, baseFare, distanceCharges, driverAllowance, tollCharges, parkingCharges, airportCharges, nightCharges, statePermitCharges, extraCharges, discount, subtotal, taxAmount, totalAmount, specialInstructions, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        `INSERT INTO bookings (id, bookingNumber, customerId, vehicleTypeId, tripType, status, pickupLocation, pickupLat, pickupLng, dropLocation, dropLat, dropLng, pickupDate, pickupTime, returnDate, passengerCount, luggageCount, estimatedDistance, estimatedDuration, flightNumber, flightType, baseFare, distanceCharges, driverAllowance, tollCharges, parkingCharges, airportCharges, nightCharges, statePermitCharges, extraCharges, discount, subtotal, taxAmount, totalAmount, specialInstructions, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
         [
-          id, bookingNumber, customerId, data.vehicleTypeId, data.tripType, BookingStatus.PENDING, data.pickupLocation, data.dropLocation, new Date(data.pickupDate), data.pickupTime,
+          id, bookingNumber, customerId, data.vehicleTypeId, data.tripType, BookingStatus.PENDING,
+          data.pickupLocation, data.pickupLat ?? null, data.pickupLng ?? null,
+          data.dropLocation, data.dropLat ?? null, data.dropLng ?? null,
+          new Date(data.pickupDate), data.pickupTime,
           data.returnDate ? new Date(data.returnDate) : null, parseInt(data.passengerCount || '1'), parseInt(data.luggageCount || '0'), data.estimatedDistance ? parseFloat(data.estimatedDistance) : null, data.estimatedDuration ? parseInt(data.estimatedDuration) : null,
           data.flightNumber || null, data.flightType || null, fareResult.baseFare, fareResult.distanceCharges, fareResult.driverAllowance, fareResult.tollCharges, fareResult.parkingCharges, fareResult.airportCharges, fareResult.nightCharges, fareResult.statePermitCharges, fareResult.extraCharges, fareResult.discount, fareResult.subtotal, fareResult.taxAmount, fareResult.totalAmount, data.specialInstructions || null
         ]
@@ -140,9 +147,20 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
       connection.release();
     }
 
-    const [[customerUserId]]: any = await pool.execute('SELECT userId FROM customer_profiles WHERE id = ?', [customerId]);
-    if (customerUserId) {
-      await createNotification(customerUserId.userId, NotificationType.BOOKING_CREATED, 'Booking Received', `Your booking ${bookingNumber} has been received.`, 'Booking', id);
+    const [[customerContact]]: any = await pool.execute(
+      `SELECT u.id as userId, u.mobile, u.email, c.fullName FROM customer_profiles c JOIN users u ON c.userId = u.id WHERE c.id = ?`, [customerId]
+    );
+    if (customerContact) {
+      await createNotification(customerContact.userId, NotificationType.BOOKING_CREATED, 'Booking Received', `Your booking ${bookingNumber} has been received.`, 'Booking', id);
+      // Booking creation succeeds regardless of whether these external
+      // channels are reachable — both functions log delivery status rather
+      // than throwing.
+      if (customerContact.mobile) await sendBookingConfirmation(customerContact.mobile, bookingNumber, customerContact.fullName || 'Customer', id);
+      if (customerContact.email) {
+        await sendBookingReceivedEmail(customerContact.email, customerContact.fullName || 'Customer', bookingNumber, {
+          pickupDate: data.pickupDate, pickupTime: data.pickupTime, pickupLocation: data.pickupLocation,
+        }, id);
+      }
     }
     const [admins]: any = await pool.execute('SELECT id FROM users WHERE role = "ADMIN"');
     for (const admin of admins) {
@@ -163,21 +181,46 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
 export const getBookingById = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
   try {
-    const [[booking]]: any = await pool.execute('SELECT * FROM bookings WHERE id = ?', [id]);
-    if (!booking) { sendNotFound(res, 'Booking not found'); return; }
+    const [[row]]: any = await pool.execute(
+      `SELECT b.*,
+              c.fullName as customerName, u.mobile as customerMobile, u.email as customerEmail,
+              d.fullName as driverName, du.mobile as driverMobile, du.email as driverEmail,
+              v.registrationNumber, v.make, v.model, v.color, vt.name as vehicleTypeName, vt.seatingCapacity
+       FROM bookings b
+       LEFT JOIN customer_profiles c ON b.customerId = c.id
+       LEFT JOIN users u ON c.userId = u.id
+       LEFT JOIN driver_profiles d ON b.driverId = d.id
+       LEFT JOIN users du ON d.userId = du.id
+       LEFT JOIN vehicles v ON b.vehicleId = v.id
+       LEFT JOIN vehicle_types vt ON b.vehicleTypeId = vt.id
+       WHERE b.id = ?`,
+      [id]
+    );
+    if (!row) { sendNotFound(res, 'Booking not found'); return; }
 
     if (req.user?.role === Role.CUSTOMER) {
       const [[profile]]: any = await pool.execute('SELECT id FROM customer_profiles WHERE userId = ?', [req.user.userId]);
-      if (booking.customerId !== profile?.id) { res.status(403).json({ success: false, message: 'Forbidden' }); return; }
+      if (row.customerId !== profile?.id) { res.status(403).json({ success: false, message: 'Forbidden' }); return; }
     }
     if (req.user?.role === Role.DRIVER) {
       const [[profile]]: any = await pool.execute('SELECT id FROM driver_profiles WHERE userId = ?', [req.user.userId]);
-      if (booking.driverId !== profile?.id) { res.status(403).json({ success: false, message: 'Forbidden' }); return; }
+      if (row.driverId !== profile?.id) { res.status(403).json({ success: false, message: 'Forbidden' }); return; }
     }
 
     const [statusHistory]: any = await pool.execute('SELECT * FROM booking_status_history WHERE bookingId = ? ORDER BY createdAt DESC', [id]);
-    const [payments]: any = await pool.execute('SELECT * FROM payments WHERE bookingId = ?', [id]);
-    
+    const [payments]: any = await pool.execute('SELECT * FROM payments WHERE bookingId = ? ORDER BY createdAt DESC', [id]);
+
+    const booking: any = { ...row };
+    delete booking.customerName; delete booking.customerMobile; delete booking.customerEmail;
+    delete booking.driverName; delete booking.driverMobile; delete booking.driverEmail;
+    delete booking.registrationNumber; delete booking.make; delete booking.model; delete booking.color;
+    delete booking.vehicleTypeName; delete booking.seatingCapacity;
+
+    booking.customer = row.customerName ? { fullName: row.customerName, user: { mobile: row.customerMobile, email: row.customerEmail } } : null;
+    booking.driver = row.driverName ? { fullName: row.driverName, user: { mobile: row.driverMobile, email: row.driverEmail } } : null;
+    booking.vehicle = row.registrationNumber ? { registrationNumber: row.registrationNumber, make: row.make, model: row.model, color: row.color } : null;
+    booking.vehicleType = row.vehicleTypeName ? { name: row.vehicleTypeName, seatingCapacity: row.seatingCapacity } : null;
+
     sendSuccess(res, { ...booking, statusHistory, payments });
   } catch (err) {
     console.error(err);
@@ -187,13 +230,27 @@ export const getBookingById = async (req: Request, res: Response): Promise<void>
 
 export const updateBookingStatus = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { status, note } = req.body;
+  const { status, note, adminOverride, overrideReason } = req.body;
 
   try {
     const [[booking]]: any = await pool.execute(
-      `SELECT b.*, c.userId as customerUserId FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id WHERE b.id = ?`, [id]
+      `SELECT b.*, c.userId as customerUserId, u.mobile as customerMobile, u.email as customerEmail, c.fullName as customerName
+       FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id LEFT JOIN users u ON c.userId = u.id WHERE b.id = ?`, [id]
     );
     if (!booking) { sendNotFound(res, 'Booking not found'); return; }
+
+    // This endpoint drives the driver-facing trip lifecycle and admin
+    // corrections. Customers have a dedicated /cancel endpoint instead —
+    // they have no legitimate transition to make here.
+    if (req.user?.role === Role.CUSTOMER) { sendForbidden(res); return; }
+
+    if (req.user?.role === Role.DRIVER) {
+      const [[driver]]: any = await pool.execute('SELECT id FROM driver_profiles WHERE userId = ?', [req.user.userId]);
+      if (!driver || booking.driverId !== driver.id) {
+        sendForbidden(res, 'You are not assigned to this booking.');
+        return;
+      }
+    }
 
     const VALID_TRANSITIONS: Record<string, string[]> = {
       [BookingStatus.PENDING]: [BookingStatus.CONFIRMED, BookingStatus.CANCELLED, BookingStatus.REJECTED],
@@ -207,6 +264,26 @@ export const updateBookingStatus = async (req: Request, res: Response): Promise<
 
     const allowedNext = VALID_TRANSITIONS[booking.status] || [];
     if (!allowedNext.includes(status)) { sendError(res, `Cannot transition from ${booking.status} to ${status}.`, 400); return; }
+
+    // Payment gate: a trip cannot be marked complete while money is still
+    // owed. Only an ADMIN may bypass this, and only with an explicit,
+    // audited reason — drivers never get this option.
+    let completedWithoutPayment = false;
+    if (status === BookingStatus.TRIP_COMPLETED) {
+      const isPaid = Number(booking.paidAmount || 0) >= Number(booking.totalAmount || 0);
+      if (!isPaid) {
+        if (req.user?.role === Role.ADMIN && adminOverride === true) {
+          if (!overrideReason || String(overrideReason).trim().length === 0) {
+            sendError(res, 'A reason is required to complete a trip without full payment.', 400);
+            return;
+          }
+          completedWithoutPayment = true;
+        } else {
+          sendError(res, 'Payment pending. Confirm payment before completing the trip.', 400);
+          return;
+        }
+      }
+    }
 
     const historyId = uuidv4();
     const connection = await pool.getConnection();
@@ -229,6 +306,16 @@ export const updateBookingStatus = async (req: Request, res: Response): Promise<
       connection.release();
     }
 
+    if (completedWithoutPayment) {
+      await createAuditLog({
+        userId: req.user!.userId, userRole: req.user!.role,
+        action: 'TRIP_COMPLETED_WITHOUT_PAYMENT', entity: 'Booking', entityId: id,
+        description: `Booking ${booking.bookingNumber} completed without full payment. Reason: ${overrideReason}`,
+        metadata: { totalAmount: booking.totalAmount, paidAmount: booking.paidAmount, reason: overrideReason },
+        ipAddress: req.ip,
+      });
+    }
+
     const notifMap: Record<string, { type: NotificationType; title: string; message: string }> = {
       CONFIRMED: { type: NotificationType.BOOKING_CONFIRMED, title: 'Booking Confirmed', message: `Your booking ${booking.bookingNumber} has been confirmed.` },
       DRIVER_ASSIGNED: { type: NotificationType.DRIVER_ASSIGNED, title: 'Driver Assigned', message: `A driver has been assigned to your booking ${booking.bookingNumber}.` },
@@ -241,6 +328,12 @@ export const updateBookingStatus = async (req: Request, res: Response): Promise<
 
     if (notifMap[status] && booking.customerUserId) {
       await createNotification(booking.customerUserId, notifMap[status].type, notifMap[status].title, notifMap[status].message, 'Booking', id);
+    }
+    if (status === BookingStatus.CONFIRMED && booking.customerEmail) {
+      await sendBookingConfirmedEmail(booking.customerEmail, booking.customerName || 'Customer', booking.bookingNumber, `₹${Number(booking.totalAmount).toLocaleString('en-IN')}`, id);
+    }
+    if (status === BookingStatus.CANCELLED && booking.customerMobile) {
+      await sendBookingCancellation(booking.customerMobile, booking.customerName || 'Customer', booking.bookingNumber, id);
     }
 
     await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'STATUS_CHANGE', entity: 'Booking', entityId: id, description: `Booking ${booking.bookingNumber} status changed to ${status}`, ipAddress: req.ip });
@@ -266,6 +359,18 @@ export const assignDriver = async (req: Request, res: Response): Promise<void> =
     if (!driver) { sendNotFound(res, 'Driver not found'); return; }
     if (driver.status !== DriverStatus.AVAILABLE) { sendError(res, 'Selected driver is not available.', 400); return; }
 
+    // Conflict check: the schema only tracks a pickup date/time (no trip
+    // end time), so same-day overlap on any other still-active booking is
+    // the practical signal that this driver is already committed elsewhere.
+    const [[conflict]]: any = await pool.execute(
+      `SELECT bookingNumber FROM bookings
+       WHERE driverId = ? AND id != ? AND DATE(pickupDate) = DATE(?)
+         AND status IN ('DRIVER_ASSIGNED','DRIVER_ACCEPTED','DRIVER_ON_THE_WAY','ARRIVED','TRIP_STARTED')
+       LIMIT 1`,
+      [driverId, id, booking.pickupDate]
+    );
+    if (conflict) { sendError(res, `Driver is already assigned to booking ${conflict.bookingNumber} on this date.`, 409); return; }
+
     const historyId = uuidv4();
     const connection = await pool.getConnection();
     try {
@@ -286,9 +391,15 @@ export const assignDriver = async (req: Request, res: Response): Promise<void> =
 
     await createNotification(driver.userId, NotificationType.DRIVER_ASSIGNED, 'New Trip Assigned', `You have been assigned a new trip. Booking: ${booking.bookingNumber}`, 'Booking', id);
 
-    const [[customer]]: any = await pool.execute('SELECT userId FROM customer_profiles WHERE id = ?', [booking.customerId]);
+    const [[customer]]: any = await pool.execute(
+      `SELECT u.id as userId, u.mobile FROM customer_profiles c JOIN users u ON c.userId = u.id WHERE c.id = ?`, [booking.customerId]
+    );
     if (customer) {
       await createNotification(customer.userId, NotificationType.DRIVER_ASSIGNED, 'Driver Assigned', `Driver ${driver.fullName} has been assigned to your booking ${booking.bookingNumber}.`, 'Booking', id);
+      if (customer.mobile) {
+        const [[vehicle]]: any = await pool.execute('SELECT registrationNumber FROM vehicles WHERE id = ?', [booking.vehicleId]);
+        await sendDriverAssignment(customer.mobile, '', driver.fullName, vehicle?.registrationNumber || 'TBD', id);
+      }
     }
 
     await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'ASSIGN_DRIVER', entity: 'Booking', entityId: id, description: `Driver ${driver.fullName} assigned`, ipAddress: req.ip });
@@ -304,12 +415,32 @@ export const assignVehicle = async (req: Request, res: Response): Promise<void> 
   const { vehicleId } = req.body;
 
   try {
-    const [[booking]]: any = await pool.execute('SELECT id, bookingNumber FROM bookings WHERE id = ?', [id]);
+    const [[booking]]: any = await pool.execute('SELECT id, bookingNumber, pickupDate FROM bookings WHERE id = ?', [id]);
     if (!booking) { sendNotFound(res, 'Booking not found'); return; }
 
-    const [[vehicle]]: any = await pool.execute('SELECT status, registrationNumber FROM vehicles WHERE id = ?', [vehicleId]);
+    const [[vehicle]]: any = await pool.execute('SELECT * FROM vehicles WHERE id = ?', [vehicleId]);
     if (!vehicle) { sendNotFound(res, 'Vehicle not found'); return; }
     if (vehicle.status === VehicleStatus.MAINTENANCE || vehicle.status === VehicleStatus.INACTIVE) { sendError(res, 'Selected vehicle is not available.', 400); return; }
+
+    const today = new Date();
+    const expiredDocs: string[] = [];
+    if (vehicle.insuranceExpiry && new Date(vehicle.insuranceExpiry) < today) expiredDocs.push('insurance');
+    if (vehicle.pucExpiry && new Date(vehicle.pucExpiry) < today) expiredDocs.push('PUC');
+    if (vehicle.permitExpiry && new Date(vehicle.permitExpiry) < today) expiredDocs.push('permit');
+    if (vehicle.fitnessExpiry && new Date(vehicle.fitnessExpiry) < today) expiredDocs.push('fitness certificate');
+    if (expiredDocs.length > 0) {
+      sendError(res, `Cannot assign this vehicle — its ${expiredDocs.join(', ')} has expired.`, 400);
+      return;
+    }
+
+    const [[conflict]]: any = await pool.execute(
+      `SELECT bookingNumber FROM bookings
+       WHERE vehicleId = ? AND id != ? AND DATE(pickupDate) = DATE(?)
+         AND status IN ('DRIVER_ASSIGNED','DRIVER_ACCEPTED','DRIVER_ON_THE_WAY','ARRIVED','TRIP_STARTED')
+       LIMIT 1`,
+      [vehicleId, id, booking.pickupDate]
+    );
+    if (conflict) { sendError(res, `Vehicle is already assigned to booking ${conflict.bookingNumber} on this date.`, 409); return; }
 
     const connection = await pool.getConnection();
     try {
@@ -332,12 +463,101 @@ export const assignVehicle = async (req: Request, res: Response): Promise<void> 
   }
 };
 
+// Driver confirms the customer has paid the outstanding balance via the
+// admin-configured UPI QR. The amount is never taken from the request body —
+// it is always the server-computed remaining balance — and the operation is
+// idempotent so a double-tap (or a retried request) cannot double-charge.
+export const confirmPayment = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { transactionRef } = req.body;
+
+  try {
+    const [[driver]]: any = await pool.execute('SELECT id FROM driver_profiles WHERE userId = ?', [req.user!.userId]);
+    if (!driver) { sendError(res, 'Driver profile not found', 404); return; }
+
+    const [[booking]]: any = await pool.execute(
+      `SELECT b.*, c.userId as customerUserId, u.mobile as customerMobile, u.email as customerEmail, c.fullName as customerName
+       FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id LEFT JOIN users u ON c.userId = u.id WHERE b.id = ?`,
+      [id]
+    );
+    if (!booking) { sendNotFound(res, 'Booking not found'); return; }
+    if (booking.driverId !== driver.id) { sendForbidden(res, 'You are not assigned to this booking.'); return; }
+
+    if (transactionRef !== undefined && transactionRef !== null && String(transactionRef).length > 100) {
+      sendError(res, 'Transaction reference is too long.', 400);
+      return;
+    }
+
+    const paymentNumber = await generatePaymentNumber();
+    const paymentId = uuidv4();
+    let remaining = 0;
+    let alreadyPaid = false;
+
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      // Row-locked re-read guards against two concurrent confirm requests
+      // (double-tap, retried request) both recording a payment.
+      const [[freshBooking]]: any = await connection.execute('SELECT paidAmount, totalAmount, bookingNumber FROM bookings WHERE id = ? FOR UPDATE', [id]);
+      const paid = Number(freshBooking.paidAmount || 0);
+      const total = Number(freshBooking.totalAmount || 0);
+      remaining = Math.round((total - paid) * 100) / 100;
+
+      if (remaining <= 0) {
+        alreadyPaid = true;
+        await connection.commit();
+      } else {
+        await connection.execute(
+          `INSERT INTO payments (id, paymentNumber, bookingId, amount, paymentMethod, status, transactionRef, collectedBy, paymentDate, notes, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, 'UPI', 'PAID', ?, ?, NOW(), ?, NOW(), NOW())`,
+          [paymentId, paymentNumber, id, remaining, transactionRef || null, driver.id, 'Collected by driver via Mailari Travels UPI QR']
+        );
+        const newPaid = paid + remaining;
+        const newStatus = newPaid >= total ? 'PAID' : 'PARTIALLY_PAID';
+        await connection.execute('UPDATE bookings SET paidAmount = ?, paymentStatus = ? WHERE id = ?', [newPaid, newStatus, id]);
+        await connection.commit();
+      }
+    } catch (e) {
+      await connection.rollback();
+      throw e;
+    } finally {
+      connection.release();
+    }
+
+    if (alreadyPaid) {
+      sendSuccess(res, null, 'Payment already recorded for this booking.');
+      return;
+    }
+
+    if (booking.customerUserId) {
+      await createNotification(booking.customerUserId, NotificationType.PAYMENT_RECEIVED, 'Payment Received', `Payment of ₹${remaining} received for booking ${booking.bookingNumber}.`, 'Payment', paymentId);
+      if (booking.customerMobile) await sendPaymentConfirmation(booking.customerMobile, booking.customerName || 'Customer', `₹${remaining}`, booking.bookingNumber, paymentId);
+      if (booking.customerEmail) await sendPaymentReceivedEmail(booking.customerEmail, booking.customerName || 'Customer', booking.bookingNumber, `₹${remaining}`, paymentNumber, paymentId);
+    }
+    await createAuditLog({
+      userId: req.user!.userId, userRole: req.user!.role,
+      action: 'DRIVER_PAYMENT_CONFIRMED', entity: 'Payment', entityId: paymentId,
+      description: `Driver confirmed UPI payment of ₹${remaining} for booking ${booking.bookingNumber}`,
+      ipAddress: req.ip,
+    });
+
+    const [[payment]]: any = await pool.execute('SELECT * FROM payments WHERE id = ?', [paymentId]);
+    sendCreated(res, payment, 'Payment confirmed');
+  } catch (err) {
+    console.error(err);
+    sendError(res, 'Internal server error');
+  }
+};
+
 export const cancelBooking = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
   const { reason } = req.body;
 
   try {
-    const [[booking]]: any = await pool.execute('SELECT b.*, c.userId as customerUserId FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id WHERE b.id = ?', [id]);
+    const [[booking]]: any = await pool.execute(
+      `SELECT b.*, c.userId as customerUserId, u.mobile as customerMobile, c.fullName as customerName
+       FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id LEFT JOIN users u ON c.userId = u.id WHERE b.id = ?`, [id]
+    );
     if (!booking) { sendNotFound(res, 'Booking not found'); return; }
 
     if (booking.status === BookingStatus.TRIP_STARTED || booking.status === BookingStatus.TRIP_COMPLETED) { sendError(res, 'Cannot cancel a trip that has started or completed.', 400); return; }
@@ -363,7 +583,10 @@ export const cancelBooking = async (req: Request, res: Response): Promise<void> 
       connection.release();
     }
 
-    if (booking.customerUserId) await createNotification(booking.customerUserId, NotificationType.BOOKING_CANCELLED, 'Booking Cancelled', `Your booking ${booking.bookingNumber} has been cancelled.`, 'Booking', id);
+    if (booking.customerUserId) {
+      await createNotification(booking.customerUserId, NotificationType.BOOKING_CANCELLED, 'Booking Cancelled', `Your booking ${booking.bookingNumber} has been cancelled.`, 'Booking', id);
+      if (booking.customerMobile) await sendBookingCancellation(booking.customerMobile, booking.customerName || 'Customer', booking.bookingNumber, id);
+    }
     await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'CANCEL', entity: 'Booking', entityId: id, description: `Booking cancelled: ${reason || 'N/A'}`, ipAddress: req.ip });
     
     sendSuccess(res, null, 'Booking cancelled successfully');

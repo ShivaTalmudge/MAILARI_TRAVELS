@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { MapPin } from 'lucide-react';
+import api from '../../services/api';
 
 interface LocationAutocompleteProps {
   value: string;
@@ -7,16 +8,17 @@ interface LocationAutocompleteProps {
   placeholder: string;
   className: string;
   required?: boolean;
+  /** Called with coordinates when the user picks a suggestion (not on free-typed text). */
+  onSelectLocation?: (result: { address: string; lat: number; lon: number }) => void;
 }
 
 interface SearchResult {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
+  displayName: string;
+  lat: number;
+  lon: number;
 }
 
-export default function LocationAutocomplete({ value, onChange, placeholder, className, required }: LocationAutocompleteProps) {
+export default function LocationAutocomplete({ value, onChange, placeholder, className, required, onSelectLocation }: LocationAutocompleteProps) {
   const [query, setQuery] = useState(value);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -35,24 +37,22 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
         setIsOpen(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   useEffect(() => {
     const searchTimer = setTimeout(async () => {
-      // Only search if user typed something new and it's longer than 3 chars
-      // We check if query doesn't match the exact selected value to prevent re-searching when a result is clicked
+      // Only search if user typed something new and it's longer than 3 chars.
+      // Compares against `value` to avoid re-searching right after a result is clicked.
       if (query && query.length > 3 && query !== value) {
         setIsSearching(true);
         try {
-          // Add countrycodes=in to restrict to India for Mailari Travels context
-          const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&countrycodes=in`);
-          const data = await res.json();
-          setResults(data);
+          const { data } = await api.get('/location/search', { params: { q: query } });
+          setResults(data.data);
           setIsOpen(true);
         } catch (error) {
-          console.error("Search failed", error);
+          console.error('Location search failed', error);
         } finally {
           setIsSearching(false);
         }
@@ -60,18 +60,18 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
         setResults([]);
         setIsOpen(false);
       }
-    }, 800); // 800ms debounce to respect Nominatim limits
+    }, 500); // debounce — search now goes through our own rate-limited/cached backend, not Nominatim directly
 
     return () => clearTimeout(searchTimer);
   }, [query, value]);
 
   const handleSelect = (result: SearchResult) => {
-    // Shorten the display name for UI
-    const parts = result.display_name.split(', ');
+    const parts = result.displayName.split(', ');
     const shortName = parts.slice(0, Math.min(3, parts.length)).join(', ');
-    
+
     setQuery(shortName);
     onChange(shortName);
+    onSelectLocation?.({ address: shortName, lat: result.lat, lon: result.lon });
     setIsOpen(false);
   };
 
@@ -93,21 +93,21 @@ export default function LocationAutocomplete({ value, onChange, placeholder, cla
           if (results.length > 0) setIsOpen(true);
         }}
       />
-      
+
       {isOpen && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden max-h-60 overflow-y-auto">
           {isSearching ? (
             <div className="p-4 text-sm text-slate-500 text-center animate-pulse">Searching locations...</div>
           ) : results.length > 0 ? (
             <ul className="divide-y divide-slate-100">
-              {results.map((result) => (
-                <li 
-                  key={result.place_id}
+              {results.map((result, idx) => (
+                <li
+                  key={`${result.lat},${result.lon},${idx}`}
                   onClick={() => handleSelect(result)}
                   className="p-3 hover:bg-brand-50 cursor-pointer flex items-start text-left transition-colors"
                 >
                   <MapPin className="h-4 w-4 text-brand-400 mt-0.5 mr-2 shrink-0" />
-                  <span className="text-sm text-slate-700">{result.display_name}</span>
+                  <span className="text-sm text-slate-700">{result.displayName}</span>
                 </li>
               ))}
             </ul>

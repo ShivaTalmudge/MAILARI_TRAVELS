@@ -1,4 +1,10 @@
-﻿-- CreateTable
+-- 001_initial_schema.sql
+-- Mailari Travels — authoritative base schema.
+-- Applied automatically by `npm run db:migrate` (server/src/scripts/migrate.ts),
+-- which tracks applied files in `schema_migrations`. Safe to also paste into
+-- phpMyAdmin's SQL tab by hand for a fresh Hostinger database — every
+-- statement here is idempotent-safe to run once against an empty database.
+
 CREATE TABLE `users` (
     `id` VARCHAR(191) NOT NULL,
     `email` VARCHAR(191) NULL,
@@ -25,7 +31,6 @@ CREATE TABLE `users` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `customer_profiles` (
     `id` VARCHAR(191) NOT NULL,
     `userId` VARCHAR(191) NOT NULL,
@@ -43,7 +48,6 @@ CREATE TABLE `customer_profiles` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `driver_profiles` (
     `id` VARCHAR(191) NOT NULL,
     `userId` VARCHAR(191) NOT NULL,
@@ -72,7 +76,6 @@ CREATE TABLE `driver_profiles` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `vehicle_types` (
     `id` VARCHAR(191) NOT NULL,
     `name` VARCHAR(191) NOT NULL,
@@ -88,7 +91,6 @@ CREATE TABLE `vehicle_types` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `vehicles` (
     `id` VARCHAR(191) NOT NULL,
     `registrationNumber` VARCHAR(191) NOT NULL,
@@ -121,7 +123,6 @@ CREATE TABLE `vehicles` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `vehicle_documents` (
     `id` VARCHAR(191) NOT NULL,
     `vehicleId` VARCHAR(191) NOT NULL,
@@ -139,7 +140,6 @@ CREATE TABLE `vehicle_documents` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `bookings` (
     `id` VARCHAR(191) NOT NULL,
     `bookingNumber` VARCHAR(191) NOT NULL,
@@ -190,7 +190,6 @@ CREATE TABLE `bookings` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `booking_status_history` (
     `id` VARCHAR(191) NOT NULL,
     `bookingId` VARCHAR(191) NOT NULL,
@@ -204,7 +203,6 @@ CREATE TABLE `booking_status_history` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `trips` (
     `id` VARCHAR(191) NOT NULL,
     `bookingId` VARCHAR(191) NOT NULL,
@@ -226,7 +224,6 @@ CREATE TABLE `trips` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `payments` (
     `id` VARCHAR(191) NOT NULL,
     `paymentNumber` VARCHAR(191) NOT NULL,
@@ -249,7 +246,6 @@ CREATE TABLE `payments` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `invoices` (
     `id` VARCHAR(191) NOT NULL,
     `invoiceNumber` VARCHAR(191) NOT NULL,
@@ -273,7 +269,6 @@ CREATE TABLE `invoices` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `invoice_items` (
     `id` VARCHAR(191) NOT NULL,
     `invoiceId` VARCHAR(191) NOT NULL,
@@ -288,7 +283,6 @@ CREATE TABLE `invoice_items` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `pricing_rules` (
     `id` VARCHAR(191) NOT NULL,
     `vehicleTypeId` VARCHAR(191) NOT NULL,
@@ -310,7 +304,6 @@ CREATE TABLE `pricing_rules` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `tax_configs` (
     `id` VARCHAR(191) NOT NULL,
     `name` VARCHAR(191) NOT NULL,
@@ -326,7 +319,6 @@ CREATE TABLE `tax_configs` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `notifications` (
     `id` VARCHAR(191) NOT NULL,
     `userId` VARCHAR(191) NOT NULL,
@@ -343,7 +335,6 @@ CREATE TABLE `notifications` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `support_tickets` (
     `id` VARCHAR(191) NOT NULL,
     `ticketNumber` VARCHAR(191) NOT NULL,
@@ -363,7 +354,6 @@ CREATE TABLE `support_tickets` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `support_messages` (
     `id` VARCHAR(191) NOT NULL,
     `ticketId` VARCHAR(191) NOT NULL,
@@ -377,7 +367,6 @@ CREATE TABLE `support_messages` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `audit_logs` (
     `id` VARCHAR(191) NOT NULL,
     `userId` VARCHAR(191) NULL,
@@ -397,7 +386,6 @@ CREATE TABLE `audit_logs` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- CreateTable
 CREATE TABLE `system_settings` (
     `id` VARCHAR(191) NOT NULL,
     `key` VARCHAR(191) NOT NULL,
@@ -414,66 +402,24 @@ CREATE TABLE `system_settings` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- AddForeignKey
 ALTER TABLE `customer_profiles` ADD CONSTRAINT `customer_profiles_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `driver_profiles` ADD CONSTRAINT `driver_profiles_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `driver_profiles` ADD CONSTRAINT `driver_profiles_assignedVehicleId_fkey` FOREIGN KEY (`assignedVehicleId`) REFERENCES `vehicles`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `vehicles` ADD CONSTRAINT `vehicles_vehicleTypeId_fkey` FOREIGN KEY (`vehicleTypeId`) REFERENCES `vehicle_types`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `vehicle_documents` ADD CONSTRAINT `vehicle_documents_vehicleId_fkey` FOREIGN KEY (`vehicleId`) REFERENCES `vehicles`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `bookings` ADD CONSTRAINT `bookings_customerId_fkey` FOREIGN KEY (`customerId`) REFERENCES `customer_profiles`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `bookings` ADD CONSTRAINT `bookings_driverId_fkey` FOREIGN KEY (`driverId`) REFERENCES `driver_profiles`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `bookings` ADD CONSTRAINT `bookings_vehicleId_fkey` FOREIGN KEY (`vehicleId`) REFERENCES `vehicles`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `bookings` ADD CONSTRAINT `bookings_vehicleTypeId_fkey` FOREIGN KEY (`vehicleTypeId`) REFERENCES `vehicle_types`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `booking_status_history` ADD CONSTRAINT `booking_status_history_bookingId_fkey` FOREIGN KEY (`bookingId`) REFERENCES `bookings`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `trips` ADD CONSTRAINT `trips_bookingId_fkey` FOREIGN KEY (`bookingId`) REFERENCES `bookings`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `trips` ADD CONSTRAINT `trips_driverId_fkey` FOREIGN KEY (`driverId`) REFERENCES `driver_profiles`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `trips` ADD CONSTRAINT `trips_vehicleId_fkey` FOREIGN KEY (`vehicleId`) REFERENCES `vehicles`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `payments` ADD CONSTRAINT `payments_bookingId_fkey` FOREIGN KEY (`bookingId`) REFERENCES `bookings`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `invoices` ADD CONSTRAINT `invoices_bookingId_fkey` FOREIGN KEY (`bookingId`) REFERENCES `bookings`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `invoice_items` ADD CONSTRAINT `invoice_items_invoiceId_fkey` FOREIGN KEY (`invoiceId`) REFERENCES `invoices`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `pricing_rules` ADD CONSTRAINT `pricing_rules_vehicleTypeId_fkey` FOREIGN KEY (`vehicleTypeId`) REFERENCES `vehicle_types`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `notifications` ADD CONSTRAINT `notifications_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `support_tickets` ADD CONSTRAINT `support_tickets_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `support_messages` ADD CONSTRAINT `support_messages_ticketId_fkey` FOREIGN KEY (`ticketId`) REFERENCES `support_tickets`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE `audit_logs` ADD CONSTRAINT `audit_logs_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-

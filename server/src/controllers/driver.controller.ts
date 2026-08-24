@@ -113,7 +113,7 @@ export const getDriverById = async (req: Request, res: Response): Promise<void> 
   try {
     const [users]: any = await pool.execute(
       `SELECT u.id, u.email, u.mobile, u.status, u.lastLoginAt, u.createdAt,
-              dp.id as profileId, dp.assignedVehicleId
+              dp.id as profileId, dp.assignedVehicleId, dp.fullName, dp.licenceNumber, dp.status as driverStatus, dp.city, dp.state
        FROM users u LEFT JOIN driver_profiles dp ON u.id = dp.userId WHERE u.id = ?`,
       [id]
     );
@@ -179,10 +179,23 @@ export const updateDriver = async (req: Request, res: Response): Promise<void> =
       if (email !== undefined) {
         await connection.execute('UPDATE users SET email = ? WHERE id = ?', [email || null, id]);
       }
+      // COALESCE every optional field against the existing value — callers
+      // (like a simplified admin edit form) may only send the fields they
+      // actually changed, and an unsent field must not be wiped to NULL.
       await connection.execute(
-        `UPDATE driver_profiles SET fullName = ?, licenceNumber = ?, licenceExpiry = COALESCE(?, licenceExpiry), dateOfBirth = COALESCE(?, dateOfBirth),
-         address = ?, city = ?, state = ?, pincode = ?, emergencyContact = ?, emergencyName = ?, updatedAt = NOW() WHERE userId = ?`,
-        [fullName, licenceNumber, licenceExpiry ? new Date(licenceExpiry) : null, dateOfBirth ? new Date(dateOfBirth) : null, address || null, city || null, state || null, pincode || null, emergencyContact || null, emergencyName || null, id]
+        `UPDATE driver_profiles SET
+           fullName = COALESCE(?, fullName), licenceNumber = COALESCE(?, licenceNumber),
+           licenceExpiry = COALESCE(?, licenceExpiry), dateOfBirth = COALESCE(?, dateOfBirth),
+           address = COALESCE(?, address), city = COALESCE(?, city), state = COALESCE(?, state), pincode = COALESCE(?, pincode),
+           emergencyContact = COALESCE(?, emergencyContact), emergencyName = COALESCE(?, emergencyName), updatedAt = NOW()
+         WHERE userId = ?`,
+        [
+          fullName || null, licenceNumber || null,
+          licenceExpiry ? new Date(licenceExpiry) : null, dateOfBirth ? new Date(dateOfBirth) : null,
+          address || null, city || null, state || null, pincode || null,
+          emergencyContact || null, emergencyName || null,
+          id,
+        ]
       );
       await connection.commit();
     } catch (e) {

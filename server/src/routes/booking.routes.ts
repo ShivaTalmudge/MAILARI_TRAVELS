@@ -13,6 +13,7 @@ router.get('/:id', ctrl.getBookingById);
 router.patch('/:id/status', ctrl.updateBookingStatus);
 router.post('/:id/assign-driver', authorize('ADMIN'), ctrl.assignDriver);
 router.post('/:id/assign-vehicle', authorize('ADMIN'), ctrl.assignVehicle);
+router.post('/:id/confirm-payment', authorize('DRIVER'), ctrl.confirmPayment);
 router.post('/:id/cancel', ctrl.cancelBooking);
 
 export default router;

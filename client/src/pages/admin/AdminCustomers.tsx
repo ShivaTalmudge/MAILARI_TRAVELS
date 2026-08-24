@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { format } from 'date-fns';
 import api from '../../services/api';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Button } from '../../components/ui/Button';
-import { useToast } from '../../components/ui/Toast';
+import { useToast } from '../../hooks/useToast';
 import { Eye, ShieldBan, CheckCircle } from 'lucide-react';
+import CustomerDetailModal from './CustomerDetailModal';
 
 interface Customer {
   id: string;
@@ -29,8 +30,9 @@ export default function AdminCustomers() {
   const [totalPages, setTotalPages] = useState(1);
   const limit = 10;
   const toast = useToast();
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = useCallback(async () => {
     try {
       setIsLoading(true);
       const { data } = await api.get('/customers', { params: { page, limit, search } });
@@ -44,19 +46,19 @@ export default function AdminCustomers() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [page, search, toast]);
 
   useEffect(() => {
     fetchCustomers();
-  }, [page, search]);
+  }, [fetchCustomers]);
 
   const toggleStatus = async (userId: string, currentStatus: boolean) => {
     try {
-      await api.patch(`/users/${userId}/status`, { isActive: !currentStatus });
-      toast(`User ${currentStatus ? 'deactivated' : 'activated'} successfully`, 'success');
+      await api.patch(`/customers/${userId}/status`, { status: currentStatus ? 'SUSPENDED' : 'ACTIVE' });
+      toast(`Customer ${currentStatus ? 'deactivated' : 'activated'} successfully`, 'success');
       fetchCustomers();
     } catch (error) {
-      toast('Failed to update user status', 'error');
+      toast('Failed to update customer status', 'error');
     }
   };
 
@@ -95,7 +97,7 @@ export default function AdminCustomers() {
         }}
         actions={(row) => (
           <div className="flex justify-end gap-2">
-            <Button variant="outline" size="icon" title="View Profile">
+            <Button variant="outline" size="icon" title="View Profile" onClick={() => setViewingUserId(row.user.id)}>
               <Eye className="h-4 w-4" />
             </Button>
             {row.user.isActive ? (
@@ -110,6 +112,10 @@ export default function AdminCustomers() {
           </div>
         )}
       />
+
+      {viewingUserId && (
+        <CustomerDetailModal userId={viewingUserId} onClose={() => setViewingUserId(null)} onChanged={fetchCustomers} />
+      )}
     </div>
   );
 }

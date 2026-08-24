@@ -133,15 +133,29 @@ export const updateVehicle = async (req: Request, res: Response): Promise<void> 
     const [[vehicle]]: any = await pool.execute('SELECT id, registrationNumber FROM vehicles WHERE id = ?', [id]);
     if (!vehicle) { sendNotFound(res, 'Vehicle not found'); return; }
 
+    // COALESCE every field against the existing row — this endpoint accepts
+    // partial updates (e.g. a simplified admin edit form sending only a few
+    // fields), and anything not sent must not be wiped to NULL.
     await pool.execute(
-      `UPDATE vehicles SET make = ?, model = ?, variant = ?, year = COALESCE(?, year), color = ?, fuelType = ?, seatingCapacity = COALESCE(?, seatingCapacity),
-         insuranceNumber = ?, insuranceExpiry = ?, permitNumber = ?, permitExpiry = ?, fitnessNumber = ?, fitnessExpiry = ?, pucNumber = ?, pucExpiry = ?,
-         currentOdometer = COALESCE(?, currentOdometer), notes = ?, updatedAt = NOW() WHERE id = ?`,
+      `UPDATE vehicles SET
+         make = COALESCE(?, make), model = COALESCE(?, model), variant = COALESCE(?, variant),
+         year = COALESCE(?, year), color = COALESCE(?, color), fuelType = COALESCE(?, fuelType),
+         seatingCapacity = COALESCE(?, seatingCapacity),
+         insuranceNumber = COALESCE(?, insuranceNumber), insuranceExpiry = COALESCE(?, insuranceExpiry),
+         permitNumber = COALESCE(?, permitNumber), permitExpiry = COALESCE(?, permitExpiry),
+         fitnessNumber = COALESCE(?, fitnessNumber), fitnessExpiry = COALESCE(?, fitnessExpiry),
+         pucNumber = COALESCE(?, pucNumber), pucExpiry = COALESCE(?, pucExpiry),
+         currentOdometer = COALESCE(?, currentOdometer), notes = COALESCE(?, notes), updatedAt = NOW()
+       WHERE id = ?`,
       [
-        data.make, data.model, data.variant, data.year ? parseInt(data.year) : null, data.color, data.fuelType, data.seatingCapacity ? parseInt(data.seatingCapacity) : null,
-        data.insuranceNumber, data.insuranceExpiry ? new Date(data.insuranceExpiry) : null, data.permitNumber, data.permitExpiry ? new Date(data.permitExpiry) : null,
-        data.fitnessNumber, data.fitnessExpiry ? new Date(data.fitnessExpiry) : null, data.pucNumber, data.pucExpiry ? new Date(data.pucExpiry) : null,
-        data.currentOdometer ? parseInt(data.currentOdometer) : null, data.notes, id
+        data.make || null, data.model || null, data.variant || null,
+        data.year ? parseInt(data.year) : null, data.color || null, data.fuelType || null,
+        data.seatingCapacity ? parseInt(data.seatingCapacity) : null,
+        data.insuranceNumber || null, data.insuranceExpiry ? new Date(data.insuranceExpiry) : null,
+        data.permitNumber || null, data.permitExpiry ? new Date(data.permitExpiry) : null,
+        data.fitnessNumber || null, data.fitnessExpiry ? new Date(data.fitnessExpiry) : null,
+        data.pucNumber || null, data.pucExpiry ? new Date(data.pucExpiry) : null,
+        data.currentOdometer ? parseInt(data.currentOdometer) : null, data.notes || null, id
       ]
     );
 

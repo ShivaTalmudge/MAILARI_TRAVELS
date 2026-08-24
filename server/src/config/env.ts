@@ -52,7 +52,14 @@ export const config = {
   whatsappApiToken: process.env.WHATSAPP_API_TOKEN || '',
   whatsappFromNumber: process.env.WHATSAPP_FROM_NUMBER || '',
 
+  smtpHost: process.env.SMTP_HOST || '',
+  smtpPort: parseInt(process.env.SMTP_PORT || '587', 10),
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPass: process.env.SMTP_PASS || '',
+  smtpFrom: process.env.SMTP_FROM || 'Mailari Travels <no-reply@mailaritravels.com>',
+
   uploadDir: process.env.UPLOAD_DIR || './uploads',
+  maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '2097152', 10),
 };
 
 export type Config = typeof config;

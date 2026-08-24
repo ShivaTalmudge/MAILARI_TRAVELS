@@ -1,5 +1,5 @@
 import React, { type ReactNode } from 'react';
-import { cn } from './Toast';
+import { cn } from '../../lib/utils';
 
 interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;

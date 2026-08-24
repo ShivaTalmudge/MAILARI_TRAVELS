@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
 import { useAuthStore } from '../../features/auth/authStore';
 import api from '../../services/api';
@@ -6,7 +7,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { format } from 'date-fns';
 import { Button } from '../../components/ui/Button';
 import { Navigation, MapPin, Calendar, Clock, Phone } from 'lucide-react';
-import { useToast } from '../../components/ui/Toast';
+import { useToast } from '../../hooks/useToast';
 
 interface DriverDashboardData {
   driver: {
@@ -22,6 +23,7 @@ interface DriverDashboardData {
 
 export default function DriverDashboard() {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
   const [data, setData] = useState<DriverDashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -170,8 +172,8 @@ export default function DriverDashboard() {
                       </Button>
                     )}
                     {activeTrip.status === 'TRIP_STARTED' && (
-                      <Button onClick={() => updateTripStatus(activeTrip.id, 'TRIP_COMPLETED')} className="bg-green-600 hover:bg-green-700 text-white" isLoading={isUpdating}>
-                        Complete Trip
+                      <Button onClick={() => navigate(`/driver/trips/${activeTrip.id}`)} className="bg-green-600 hover:bg-green-700 text-white">
+                        View Payment &amp; Complete Trip
                       </Button>
                     )}
                  </div>

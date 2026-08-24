@@ -37,46 +37,46 @@ export const generateEmailHtml = (title: string, body: string) => `
 `;
 
 export const templates = {
-  customerWelcome: (name: string) => generateEmailHtml(
+  customerWelcome: (name: string, baseUrl: string) => generateEmailHtml(
     'Welcome to Mailari Travels',
     `<h2>Hello ${name},</h2>
      <p>Welcome to Mailari Travels! We are thrilled to have you on board.</p>
      <p>You can now book outstation cabs, local rentals, and airport transfers with verified drivers and transparent pricing.</p>
-     <p><a href="https://mailaritravels.com/login" class="button">Log in to your account</a></p>`
+     <p><a href="${baseUrl}/login/customer" class="button">Log in to your account</a></p>`
   ),
-  
-  emailVerification: (name: string, token: string) => generateEmailHtml(
+
+  emailVerification: (name: string, token: string, baseUrl: string) => generateEmailHtml(
     'Verify your Email',
     `<h2>Hello ${name},</h2>
      <p>Please verify your email address to secure your Mailari Travels account.</p>
-     <p><a href="https://mailaritravels.com/verify?token=${token}" class="button">Verify Email</a></p>
+     <p><a href="${baseUrl}/verify?token=${token}" class="button">Verify Email</a></p>
      <p>If you did not create this account, please ignore this email.</p>`
   ),
-  
-  passwordReset: (name: string, token: string) => generateEmailHtml(
+
+  passwordReset: (name: string, token: string, baseUrl: string) => generateEmailHtml(
     'Reset your Password',
     `<h2>Hello ${name},</h2>
      <p>We received a request to reset your password. Click the button below to choose a new password.</p>
-     <p><a href="https://mailaritravels.com/reset-password?token=${token}" class="button">Reset Password</a></p>
+     <p><a href="${baseUrl}/reset-password?token=${token}" class="button">Reset Password</a></p>
      <p>This link expires in 30 minutes. If you did not request this, please ignore this email.</p>`
   ),
-  
-  bookingReceived: (name: string, bookingNumber: string, details: any) => generateEmailHtml(
+
+  bookingReceived: (name: string, bookingNumber: string, details: { pickupDate: string; pickupTime: string; pickupLocation: string }, baseUrl: string) => generateEmailHtml(
     'Booking Request Received',
     `<h2>Hello ${name},</h2>
      <p>We have received your booking request (<strong>${bookingNumber}</strong>).</p>
      <p><strong>Pickup:</strong> ${details.pickupDate} at ${details.pickupTime}</p>
      <p><strong>From:</strong> ${details.pickupLocation}</p>
      <p>Our team is reviewing your request and will assign a driver shortly.</p>
-     <p><a href="https://mailaritravels.com/customer/bookings/${bookingNumber}" class="button">View Booking</a></p>`
+     <p><a href="${baseUrl}/customer/bookings" class="button">View Booking</a></p>`
   ),
-  
-  bookingConfirmed: (name: string, bookingNumber: string, amount: string) => generateEmailHtml(
+
+  bookingConfirmed: (name: string, bookingNumber: string, amount: string, baseUrl: string) => generateEmailHtml(
     'Booking Confirmed',
     `<h2>Hello ${name},</h2>
      <p>Great news! Your booking <strong>${bookingNumber}</strong> is confirmed.</p>
      <p>The total estimated fare is ${amount}. You can track your trip from your dashboard.</p>
-     <p><a href="https://mailaritravels.com/customer/bookings/${bookingNumber}" class="button">View Booking details</a></p>`
+     <p><a href="${baseUrl}/customer/bookings" class="button">View Booking details</a></p>`
   ),
 
   paymentReceived: (name: string, bookingNumber: string, amount: string, receipt: string) => generateEmailHtml(
@@ -86,12 +86,12 @@ export const templates = {
      <p>Transaction Reference: ${receipt}</p>
      <p>Thank you for choosing Mailari Travels.</p>`
   ),
-  
-  invoiceGenerated: (name: string, invoiceNumber: string, bookingNumber: string) => generateEmailHtml(
+
+  invoiceGenerated: (name: string, invoiceNumber: string, bookingNumber: string, baseUrl: string) => generateEmailHtml(
     'Your Invoice is Ready',
     `<h2>Hello ${name},</h2>
      <p>Your invoice (<strong>${invoiceNumber}</strong>) for booking ${bookingNumber} has been generated.</p>
      <p>You can view and download the PDF invoice from your dashboard.</p>
-     <p><a href="https://mailaritravels.com/customer/invoices" class="button">View Invoice</a></p>`
+     <p><a href="${baseUrl}/customer/invoices" class="button">View Invoice</a></p>`
   )
 };

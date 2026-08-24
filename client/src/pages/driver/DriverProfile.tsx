@@ -3,7 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Ca
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useAuthStore } from '../../features/auth/authStore';
-import { useToast } from '../../components/ui/Toast';
+import { useToast } from '../../hooks/useToast';
 import api from '../../services/api';
 import { format } from 'date-fns';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -50,17 +50,23 @@ export default function DriverProfile() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     try {
       setIsLoading(true);
-      // Actual implementation would update driver profile
-      // await api.put('/drivers/profile', formData);
-      toast('Profile update requested', 'success');
-      // Update local state if needed
-      if (user) {
-        setAuth({ ...user, fullName: formData.fullName, email: formData.email }, localStorage.getItem('token')!);
-      }
-    } catch (error) {
-      toast('Failed to update profile', 'error');
+      await api.put(`/drivers/${user.id}`, {
+        fullName: formData.fullName,
+        email: formData.email,
+        address: formData.address,
+        city: formData.city,
+        state: formData.state,
+        pincode: formData.pincode,
+        emergencyContact: formData.emergencyContact,
+        emergencyName: formData.emergencyName,
+      });
+      toast('Profile updated', 'success');
+      setAuth({ ...user, fullName: formData.fullName, email: formData.email }, localStorage.getItem('token')!);
+    } catch (error: any) {
+      toast(error?.response?.data?.message || 'Failed to update profile', 'error');
     } finally {
       setIsLoading(false);
     }

@@ -2,8 +2,6 @@ import { Request, Response } from 'express';
 import { pool } from '../config/db';
 import { sendSuccess, sendError, sendNotFound } from '../utils/response';
 import { getPaginationParams, createAuditLog } from '../utils/helpers';
-import { Role, UserStatus } from '../types';
-import { RowDataPacket } from 'mysql2/promise';
 
 export const getCustomers = async (req: Request, res: Response): Promise<void> => {
   const { skip, take, page, limit } = getPaginationParams(req.query as { page?: string; limit?: string });
@@ -137,8 +135,11 @@ export const updateCustomer = async (req: Request, res: Response): Promise<void>
         await connection.execute('UPDATE users SET email = ? WHERE id = ?', [email || null, id]);
       }
       await connection.execute(
-        'UPDATE customer_profiles SET fullName = ?, address = ?, city = ?, state = ?, pincode = ? WHERE userId = ?',
-        [fullName, address || null, city || null, state || null, pincode || null, id]
+        `UPDATE customer_profiles SET
+           fullName = COALESCE(?, fullName), address = COALESCE(?, address),
+           city = COALESCE(?, city), state = COALESCE(?, state), pincode = COALESCE(?, pincode)
+         WHERE userId = ?`,
+        [fullName || null, address || null, city || null, state || null, pincode || null, id]
       );
       await connection.commit();
     } catch (e) {

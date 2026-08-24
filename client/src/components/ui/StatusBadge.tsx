@@ -1,4 +1,4 @@
-import { cn } from './Toast';
+import { cn } from '../../lib/utils';
 
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {

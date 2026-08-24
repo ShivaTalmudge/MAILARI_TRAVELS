@@ -38,6 +38,7 @@ import CustomerSupport from '../pages/customer/CustomerSupport';
 // Driver Pages
 import DriverDashboard from '../pages/driver/DriverDashboard';
 import DriverTrips from '../pages/driver/DriverTrips';
+import DriverTripDetail from '../pages/driver/DriverTripDetail';
 import DriverVehicle from '../pages/driver/DriverVehicle';
 import DriverProfile from '../pages/driver/DriverProfile';
 import DriverEarnings from '../pages/driver/DriverEarnings';
@@ -95,6 +96,7 @@ export default function AppRoutes() {
         <Route index element={<Navigate to="/driver/dashboard" replace />} />
         <Route path="dashboard" element={<DriverDashboard />} />
         <Route path="trips" element={<DriverTrips />} />
+        <Route path="trips/:id" element={<DriverTripDetail />} />
         <Route path="vehicle" element={<DriverVehicle />} />
         <Route path="profile" element={<DriverProfile />} />
         <Route path="earnings" element={<DriverEarnings />} />

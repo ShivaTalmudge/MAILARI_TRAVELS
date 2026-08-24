@@ -3,7 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Ca
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useAuthStore } from '../../features/auth/authStore';
-import { useToast } from '../../components/ui/Toast';
+import { useToast } from '../../hooks/useToast';
 import api from '../../services/api';
 
 export default function CustomerProfile() {
@@ -23,10 +23,10 @@ export default function CustomerProfile() {
   useEffect(() => {
     // Fetch detailed profile info
     api.get('/auth/me').then(({ data }) => {
-      const profile = data.data.profile || {};
+      const profile = data.data.customerProfile || {};
       setFormData(prev => ({
         ...prev,
-        fullName: data.data.fullName || prev.fullName,
+        fullName: profile.fullName || prev.fullName,
         email: data.data.email || prev.email,
         address: profile.address || '',
         city: profile.city || '',
@@ -42,18 +42,14 @@ export default function CustomerProfile() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     try {
       setIsLoading(true);
-      // In a real implementation we would have an update profile endpoint.
-      // Assuming a generic /users/profile exists based on typical structures, or /auth/me update.
-      await api.put('/customers/profile', formData);
+      await api.put(`/customers/${user.id}`, formData);
       toast('Profile updated successfully', 'success');
-      // Update local state if needed
-      if (user) {
-        setAuth({ ...user, fullName: formData.fullName, email: formData.email }, localStorage.getItem('token')!);
-      }
-    } catch (error) {
-      toast('Failed to update profile', 'error');
+      setAuth({ ...user, fullName: formData.fullName, email: formData.email }, localStorage.getItem('token')!);
+    } catch (error: any) {
+      toast(error?.response?.data?.message || 'Failed to update profile', 'error');
     } finally {
       setIsLoading(false);
     }

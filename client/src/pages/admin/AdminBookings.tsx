@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { format } from 'date-fns';
 import api from '../../services/api';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Button } from '../../components/ui/Button';
-import { Eye, Truck } from 'lucide-react';
-import { useToast } from '../../components/ui/Toast';
+import { Eye } from 'lucide-react';
+import { useToast } from '../../hooks/useToast';
+import BookingDetailModal from './BookingDetailModal';
 
 interface Booking {
   id: string;
@@ -29,8 +30,9 @@ export default function AdminBookings() {
   const [totalPages, setTotalPages] = useState(1);
   const limit = 10;
   const toast = useToast();
+  const [viewingBookingId, setViewingBookingId] = useState<string | null>(null);
 
-  const fetchBookings = async () => {
+  const fetchBookings = useCallback(async () => {
     try {
       setIsLoading(true);
       const { data } = await api.get('/bookings', { params: { page, limit, search } });
@@ -44,11 +46,11 @@ export default function AdminBookings() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [page, search, toast]);
 
   useEffect(() => {
     fetchBookings();
-  }, [page, search]);
+  }, [fetchBookings]);
 
   const columns: Column<Booking>[] = [
     { key: 'bookingNumber', label: 'Booking ID', render: (row) => <span className="font-medium">{row.bookingNumber}</span> },
@@ -77,7 +79,6 @@ export default function AdminBookings() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight text-slate-900">Bookings</h1>
-        <Button onClick={() => {}} className="gap-2">New Booking</Button>
       </div>
 
       <DataTable
@@ -96,17 +97,20 @@ export default function AdminBookings() {
         }}
         actions={(row) => (
           <div className="flex justify-end gap-2">
-            <Button variant="outline" size="icon" title="View Details">
+            <Button variant="outline" size="icon" title="View Details" onClick={() => setViewingBookingId(row.id)}>
               <Eye className="h-4 w-4" />
             </Button>
-            {!row.driver && row.status === 'CONFIRMED' && (
-              <Button variant="outline" size="icon" title="Assign Driver">
-                <Truck className="h-4 w-4" />
-              </Button>
-            )}
           </div>
         )}
       />
+
+      {viewingBookingId && (
+        <BookingDetailModal
+          bookingId={viewingBookingId}
+          onClose={() => setViewingBookingId(null)}
+          onChanged={fetchBookings}
+        />
+      )}
     </div>
   );
 }

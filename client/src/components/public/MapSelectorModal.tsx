@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { Button } from '../ui/Button';
+import api from '../../services/api';
 
 // Fix Leaflet's default icon path issues with Webpack/Vite
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -16,7 +17,7 @@ L.Icon.Default.mergeOptions({
 interface MapSelectorModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (address: string) => void;
+  onSelect: (address: string, lat: number, lon: number) => void;
   title?: string;
 }
 
@@ -32,15 +33,10 @@ function LocationMarker({ position, setPosition, setAddress, setIsFetching }: an
   const fetchAddress = async (lat: number, lng: number) => {
     setIsFetching(true);
     try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-      const data = await response.json();
-      if (data && data.display_name) {
-        setAddress(data.display_name);
-      } else {
-        setAddress('Unknown Location');
-      }
+      const { data } = await api.get('/location/reverse', { params: { lat, lon: lng } });
+      setAddress(data.data?.displayName || 'Unknown Location');
     } catch (error) {
-      console.error("Error fetching address:", error);
+      console.error('Error fetching address:', error);
       setAddress('Error fetching location');
     } finally {
       setIsFetching(false);
@@ -78,11 +74,11 @@ export default function MapSelectorModal({ isOpen, onClose, onSelect, title = "S
   if (!isOpen) return null;
 
   const handleConfirm = () => {
-    if (address && !isFetching) {
+    if (address && position && !isFetching) {
       // Clean up the address to make it shorter (first 3 parts)
       const parts = address.split(', ');
       const shortAddress = parts.slice(0, Math.min(3, parts.length)).join(', ');
-      onSelect(shortAddress);
+      onSelect(shortAddress, position.lat, position.lng);
       onClose();
     }
   };

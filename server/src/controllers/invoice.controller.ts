@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { pool } from '../config/db';
 import { sendSuccess, sendCreated, sendNotFound, sendError } from '../utils/response';
 import { generateInvoiceNumber, createAuditLog, getPaginationParams } from '../utils/helpers';
-import { createNotification } from '../services/notification.service';
+import { createNotification, sendInvoiceNotification, sendInvoiceGeneratedEmail } from '../services/notification.service';
 import { NotificationType, Role } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -52,7 +52,8 @@ export const generateInvoice = async (req: Request, res: Response): Promise<void
 
   try {
     const [[booking]]: any = await pool.execute(
-      `SELECT b.*, c.userId as customerUserId FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id WHERE b.id = ?`, [bookingId]
+      `SELECT b.*, c.userId as customerUserId, u.mobile as customerMobile, u.email as customerEmail, c.fullName as customerName
+       FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id LEFT JOIN users u ON c.userId = u.id WHERE b.id = ?`, [bookingId]
     );
     if (!booking) { sendNotFound(res, 'Booking not found'); return; }
 
@@ -105,6 +106,8 @@ export const generateInvoice = async (req: Request, res: Response): Promise<void
 
     if (booking.customerUserId) {
       await createNotification(booking.customerUserId, NotificationType.INVOICE_GENERATED, 'Invoice Generated', `Invoice ${invoiceNumber} has been generated for your booking ${booking.bookingNumber}.`, 'Invoice', invoiceId);
+      if (booking.customerMobile) await sendInvoiceNotification(booking.customerMobile, booking.customerName || 'Customer', invoiceNumber, `₹${Number(booking.totalAmount).toLocaleString('en-IN')}`, invoiceId);
+      if (booking.customerEmail) await sendInvoiceGeneratedEmail(booking.customerEmail, booking.customerName || 'Customer', invoiceNumber, booking.bookingNumber, invoiceId);
     }
     await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'CREATE', entity: 'Invoice', entityId: invoiceId, description: `Invoice ${invoiceNumber} generated for booking ${booking.bookingNumber}`, ipAddress: req.ip });
     

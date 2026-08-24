@@ -4,17 +4,25 @@ import { MapPin, Calendar, Clock, Map as MapIcon } from 'lucide-react';
 import { Button } from '../ui/Button';
 import MapSelectorModal from './MapSelectorModal';
 import LocationAutocomplete from './LocationAutocomplete';
+import { useBookingDraftStore } from '../../features/booking/bookingDraftStore';
 
 type TripType = 'LOCAL' | 'OUTSTATION' | 'AIRPORT' | 'RENTAL';
+
+const TRIP_TYPE_MAP: Record<TripType, string> = {
+  LOCAL: 'LOCAL',
+  OUTSTATION: 'OUTSTATION',
+  AIRPORT: 'AIRPORT_TRANSFER',
+  RENTAL: 'FULL_DAY_RENTAL',
+};
 
 export default function BookingWidget() {
   const [activeTab, setActiveTab] = useState<TripType>('LOCAL');
   const navigate = useNavigate();
+  const setDraft = useBookingDraftStore((s) => s.setDraft);
 
-  // Basic state to hold form data to pass to the booking flow
   const [formData, setFormData] = useState({
-    pickup: '',
-    destination: '',
+    pickup: '', pickupLat: undefined as number | undefined, pickupLng: undefined as number | undefined,
+    destination: '', destinationLat: undefined as number | undefined, destinationLng: undefined as number | undefined,
     date: '',
     time: '',
   });
@@ -24,15 +32,21 @@ export default function BookingWidget() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    // Navigate to the actual booking flow with pre-filled state
-    const params = new URLSearchParams({
-      type: activeTab,
-      pickup: formData.pickup,
-      destination: formData.destination,
-      date: formData.date,
-      time: formData.time
+    // Booking requires an account. Save what the visitor entered so it
+    // survives the login/register interruption, then send them to sign in —
+    // the customer booking wizard picks the draft back up once they're in.
+    setDraft({
+      tripType: TRIP_TYPE_MAP[activeTab],
+      pickupLocation: formData.pickup,
+      pickupLat: formData.pickupLat,
+      pickupLng: formData.pickupLng,
+      dropLocation: formData.destination,
+      dropLat: formData.destinationLat,
+      dropLng: formData.destinationLng,
+      pickupDate: formData.date,
+      pickupTime: formData.time,
     });
-    navigate(`/book?${params.toString()}`);
+    navigate('/login/customer');
   };
 
   const handleOpenMap = (field: 'pickup' | 'destination') => {
@@ -40,9 +54,11 @@ export default function BookingWidget() {
     setIsMapModalOpen(true);
   };
 
-  const handleLocationSelect = (address: string) => {
-    if (activeMapField) {
-      setFormData(prev => ({ ...prev, [activeMapField]: address }));
+  const handleLocationSelect = (address: string, lat: number, lon: number) => {
+    if (activeMapField === 'pickup') {
+      setFormData((prev) => ({ ...prev, pickup: address, pickupLat: lat, pickupLng: lon }));
+    } else if (activeMapField === 'destination') {
+      setFormData((prev) => ({ ...prev, destination: address, destinationLat: lat, destinationLng: lon }));
     }
   };
 
@@ -83,6 +99,7 @@ export default function BookingWidget() {
               className={inputClass}
               value={formData.pickup}
               onChange={val => setFormData({...formData, pickup: val})}
+              onSelectLocation={(r) => setFormData(prev => ({ ...prev, pickup: r.address, pickupLat: r.lat, pickupLng: r.lon }))}
               required
             />
             <button 
@@ -105,6 +122,7 @@ export default function BookingWidget() {
                 className={inputClass}
                 value={formData.destination}
                 onChange={val => setFormData({...formData, destination: val})}
+                onSelectLocation={(r) => setFormData(prev => ({ ...prev, destination: r.address, destinationLat: r.lat, destinationLng: r.lon }))}
                 required={activeTab === 'OUTSTATION'}
               />
               <button 

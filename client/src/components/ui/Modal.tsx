@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { Button } from './Button';
-import { cn } from './Toast';
+import { cn } from '../../lib/utils';
 
 interface ModalProps {
   isOpen: boolean;

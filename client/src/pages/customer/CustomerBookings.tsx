@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { format } from 'date-fns';
 import api from '../../services/api';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Button } from '../../components/ui/Button';
-import { useToast } from '../../components/ui/Toast';
+import { useToast } from '../../hooks/useToast';
 import { Eye, Plus } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import CustomerBookingDetailModal from './CustomerBookingDetailModal';
 
 interface Booking {
   id: string;
@@ -27,8 +28,9 @@ export default function CustomerBookings() {
   const [totalPages, setTotalPages] = useState(1);
   const limit = 10;
   const toast = useToast();
+  const [viewingBookingId, setViewingBookingId] = useState<string | null>(null);
 
-  const fetchBookings = async () => {
+  const fetchBookings = useCallback(async () => {
     try {
       setIsLoading(true);
       const { data } = await api.get('/bookings', { params: { page, limit } });
@@ -42,11 +44,11 @@ export default function CustomerBookings() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [page, toast]);
 
   useEffect(() => {
     fetchBookings();
-  }, [page]);
+  }, [fetchBookings]);
 
   const columns: Column<Booking>[] = [
     { key: 'bookingNumber', label: 'Booking ID', render: (row) => <span className="font-medium text-brand-700">{row.bookingNumber}</span> },
@@ -90,14 +92,18 @@ export default function CustomerBookings() {
           limit,
           onPageChange: setPage
         }}
-        actions={() => (
+        actions={(row) => (
           <div className="flex justify-end">
-            <Button variant="outline" size="icon" title="View Booking Details">
+            <Button variant="outline" size="icon" title="View Booking Details" onClick={() => setViewingBookingId(row.id)}>
               <Eye className="h-4 w-4" />
             </Button>
           </div>
         )}
       />
+
+      {viewingBookingId && (
+        <CustomerBookingDetailModal bookingId={viewingBookingId} onClose={() => setViewingBookingId(null)} />
+      )}
     </div>
   );
 }

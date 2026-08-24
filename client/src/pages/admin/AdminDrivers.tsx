@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Button } from '../../components/ui/Button';
-import { useToast } from '../../components/ui/Toast';
-import { Eye, Edit, Plus } from 'lucide-react';
+import { useToast } from '../../hooks/useToast';
+import { Eye, Plus } from 'lucide-react';
+import AddDriverModal from './AddDriverModal';
+import DriverDetailModal from './DriverDetailModal';
 
 interface Driver {
   id: string;
@@ -28,8 +30,10 @@ export default function AdminDrivers() {
   const [totalPages, setTotalPages] = useState(1);
   const limit = 10;
   const toast = useToast();
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [viewingDriverId, setViewingDriverId] = useState<string | null>(null);
 
-  const fetchDrivers = async () => {
+  const fetchDrivers = useCallback(async () => {
     try {
       setIsLoading(true);
       const { data } = await api.get('/drivers', { params: { page, limit, search } });
@@ -43,11 +47,11 @@ export default function AdminDrivers() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [page, search, toast]);
 
   useEffect(() => {
     fetchDrivers();
-  }, [page, search]);
+  }, [fetchDrivers]);
 
   const columns: Column<Driver>[] = [
     { key: 'fullName', label: 'Driver Name', render: (row) => <span className="font-medium">{row.fullName}</span> },
@@ -61,7 +65,7 @@ export default function AdminDrivers() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight text-slate-900">Drivers</h1>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => setShowAddModal(true)}>
           <Plus className="h-4 w-4" />
           Add Driver
         </Button>
@@ -81,17 +85,19 @@ export default function AdminDrivers() {
           limit,
           onPageChange: setPage
         }}
-        actions={() => (
+        actions={(row) => (
           <div className="flex justify-end gap-2">
-            <Button variant="outline" size="icon" title="View Details">
+            <Button variant="outline" size="icon" title="View Details" onClick={() => setViewingDriverId(row.id)}>
               <Eye className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="icon" title="Edit Driver">
-              <Edit className="h-4 w-4" />
             </Button>
           </div>
         )}
       />
+
+      {showAddModal && <AddDriverModal onClose={() => setShowAddModal(false)} onCreated={fetchDrivers} />}
+      {viewingDriverId && (
+        <DriverDetailModal driverId={viewingDriverId} onClose={() => setViewingDriverId(null)} onChanged={fetchDrivers} />
+      )}
     </div>
   );
 }

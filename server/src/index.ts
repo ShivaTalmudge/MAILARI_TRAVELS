@@ -5,14 +5,13 @@ import cors from 'cors';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
+import path from 'path';
 import { rateLimit } from 'express-rate-limit';
 
 import { config } from './config/env';
 import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
 import { pool } from './config/db';
-
-let dbConnectionError: string | null = null;
 
 // Routes
 import authRoutes from './routes/auth.routes';
@@ -23,6 +22,8 @@ import vehicleTypeRoutes from './routes/vehicleType.routes';
 import bookingRoutes from './routes/booking.routes';
 import tripRoutes from './routes/trip.routes';
 import paymentRoutes from './routes/payment.routes';
+import paymentQrRoutes from './routes/paymentQr.routes';
+import locationRoutes from './routes/location.routes';
 import invoiceRoutes from './routes/invoice.routes';
 import pricingRoutes from './routes/pricing.routes';
 import notificationRoutes from './routes/notification.routes';
@@ -47,7 +48,10 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
       imgSrc: ["'self'", "data:", "https://images.unsplash.com", "https://*.tile.openstreetmap.org", "https://cdnjs.cloudflare.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      connectSrc: ["'self'", "https://nominatim.openstreetmap.org"],
+      // Geocoding/routing now happen server-side (see location.service.ts),
+      // so the browser only ever talks to our own origin — no more direct
+      // client calls to Nominatim.
+      connectSrc: ["'self'"],
     },
   } : false,
 }));
@@ -94,22 +98,28 @@ if (config.nodeEnv !== 'test') {
 }
 
 // ── Health Check ──────────────────────────────────────
+// Liveness: process is up. Does not touch the database.
 app.get('/api/health', (_req, res) => {
   res.json({ success: true, message: 'Mailari Travels API is running', timestamp: new Date().toISOString() });
 });
 
-// ── Debug DB Route ────────────────────────────────────
-app.get('/api/debug-db', (_req, res) => {
-  res.json({
-    success: false,
-    message: 'Database Connection Status',
-    error: dbConnectionError || 'No error. Database is connected!',
-    dbUser: process.env.DB_USER || 'Not Set',
-    dbName: process.env.DB_NAME || 'Not Set',
-    dbHost: process.env.DB_HOST || 'Not Set',
-    hasDatabaseUrl: !!process.env.DATABASE_URL
-  });
+// Readiness: safe to receive traffic. Verifies the database is actually
+// reachable so a broken DB is reported to the deploy platform instead of
+// being silently hidden behind a 200.
+app.get('/api/health/ready', async (_req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    connection.release();
+    res.json({ success: true, message: 'Ready', timestamp: new Date().toISOString() });
+  } catch {
+    res.status(503).json({ success: false, message: 'Not ready: database unavailable', timestamp: new Date().toISOString() });
+  }
 });
+
+// ── Uploaded Files ────────────────────────────────────
+// Filenames are always server-generated UUIDs (see middleware/upload.ts),
+// so there is nothing sensitive or enumerable to protect here.
+app.use('/uploads', express.static(path.resolve(config.uploadDir)));
 
 // ── API Routes ────────────────────────────────────────
 app.use('/api/auth', authRoutes);
@@ -121,6 +131,8 @@ app.use('/api/vehicle-types', vehicleTypeRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/trips', tripRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/payment-qr', paymentQrRoutes);
+app.use('/api/location', locationRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/pricing', pricingRoutes);
 app.use('/api/notifications', notificationRoutes);
@@ -130,7 +142,6 @@ app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/settings', settingRoutes);
 
 // ── Static Frontend Serving (Production) ──────────────
-import path from 'path';
 if (config.nodeEnv === 'production') {
   const clientDistPath = path.resolve(__dirname, '../../client/dist');
   app.use(express.static(clientDistPath));
@@ -158,12 +169,13 @@ const startServer = async () => {
     console.log('✅ Database connected');
     connection.release();
   } catch (error: any) {
-    console.error('❌ Failed to connect to database:', error);
-    dbConnectionError = error.message || String(error);
-    // DO NOT process.exit(1) here so the server stays alive and we avoid the 503 error!
+    console.error('❌ Failed to connect to database at startup:', error);
+    // The process still listens so the platform's process manager keeps it
+    // running (and so /api/health/ready can honestly report 503 instead of
+    // the process refusing to start at all) — /api/health/ready is the
+    // signal that actually reflects DB availability, not process liveness.
   }
 
-  // Always start the HTTP server even if DB fails, so Hostinger doesn't throw 503
   app.listen(config.port, () => {
     console.log(`🚀 Mailari Travels API running on port ${config.port}`);
     console.log(`   Environment: ${config.nodeEnv}`);

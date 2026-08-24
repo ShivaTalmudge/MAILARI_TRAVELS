@@ -3,9 +3,13 @@ import { z } from 'zod';
 export const createBookingSchema = z.object({
   customerId: z.string().optional(), // required only for ADMIN, handled in controller
   vehicleTypeId: z.string().min(1, 'Vehicle Type is required'),
-  tripType: z.enum(['LOCAL', 'OUTSTATION', 'AIRPORT_TRANSFER', 'ONE_WAY', 'ROUND_TRIP']),
+  tripType: z.enum(['LOCAL', 'OUTSTATION', 'AIRPORT_TRANSFER', 'ONE_WAY', 'ROUND_TRIP', 'FULL_DAY_RENTAL', 'CUSTOM']),
   pickupLocation: z.string().min(5, 'Pickup location is too short'),
+  pickupLat: z.union([z.string(), z.number()]).transform(val => Number(val)).optional(),
+  pickupLng: z.union([z.string(), z.number()]).transform(val => Number(val)).optional(),
   dropLocation: z.string().optional(),
+  dropLat: z.union([z.string(), z.number()]).transform(val => Number(val)).optional(),
+  dropLng: z.union([z.string(), z.number()]).transform(val => Number(val)).optional(),
   pickupDate: z.string().datetime({ message: 'Invalid pickup date format' }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   pickupTime: z.string().regex(/^([01]\d|2[0-3]):?([0-5]\d)$/, 'Invalid time format (HH:MM)'),
   returnDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).or(z.literal('')).optional().nullable(),

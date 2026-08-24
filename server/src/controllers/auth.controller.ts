@@ -299,7 +299,7 @@ export const googleLogin = async (req: Request, res: Response): Promise<void> =>
     const avatarUrl = payload.picture;
 
     const [users]: any = await pool.execute(
-      `SELECT u.*, 
+      `SELECT u.*,
         c.fullName as customerName, c.id as customerId,
         d.fullName as driverName, d.id as driverId
        FROM users u
@@ -310,6 +310,15 @@ export const googleLogin = async (req: Request, res: Response): Promise<void> =>
     );
 
     let user = users.length > 0 ? users[0] : null;
+
+    // Google sign-in is a CUSTOMER-only entry point. If this email already
+    // belongs to an ADMIN or DRIVER account, refuse rather than logging the
+    // caller in as that account — an attacker who verifies a staff member's
+    // email address via Google must not be able to assume their role.
+    if (user && user.role !== Role.CUSTOMER) {
+      sendUnauthorized(res, 'This email is not registered for customer sign-in. Please use your staff login.');
+      return;
+    }
 
     if (user) {
       if (!user.googleId) {

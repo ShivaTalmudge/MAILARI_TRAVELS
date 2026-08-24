@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { ChevronUp, ChevronDown, ChevronsUpDown, Search, ChevronLeft, ChevronRight } from 'lucide-react';
-import { cn } from './Toast';
+import { cn } from '../../lib/utils';
 import { Button } from './Button';
 
 export interface Column<T> {
