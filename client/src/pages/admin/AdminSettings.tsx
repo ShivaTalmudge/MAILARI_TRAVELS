@@ -185,10 +185,17 @@ export default function AdminSettings() {
     try {
       setIsLoading(true);
       const { data } = await api.get('/settings');
-      const settingsMap = data.data.reduce((acc: Record<string, string>, item: any) => {
-        acc[item.key] = item.value;
-        return acc;
-      }, {});
+      // Backend returns grouped object: { category: { key: { value: '...' } } }
+      const settingsMap: Record<string, string> = {};
+      
+      if (data.data) {
+        Object.values(data.data).forEach((categoryGroup: any) => {
+          Object.entries(categoryGroup).forEach(([key, setting]: [string, any]) => {
+            settingsMap[key] = setting.value;
+          });
+        });
+      }
+      
       setSettings(settingsMap);
     } catch (error) {
       toast('Failed to fetch settings', 'error');
@@ -209,9 +216,8 @@ export default function AdminSettings() {
     e.preventDefault();
     try {
       setIsSaving(true);
-      // Format as array of key/value pairs
-      const payload = Object.entries(settings).map(([key, value]) => ({ key, value }));
-      await api.put('/settings/bulk', { settings: payload });
+      // Send as simple object map
+      await api.put('/settings', settings);
       toast('Settings saved successfully', 'success');
     } catch (error) {
       toast('Failed to save settings', 'error');

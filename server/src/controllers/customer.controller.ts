@@ -78,30 +78,34 @@ export const getCustomerById = async (req: Request, res: Response): Promise<void
       [id]
     );
 
-    if (users.length === 0 || !users[0].profileId) {
+    if (users.length === 0) {
       sendNotFound(res, 'Customer not found');
       return;
     }
 
     const user = users[0];
 
-    const [bookings]: any = await pool.execute(
-      `SELECT b.*, v.name as vehicleTypeName, d.fullName as driverName
-       FROM bookings b
-       LEFT JOIN vehicle_types v ON b.vehicleTypeId = v.id
-       LEFT JOIN driver_profiles d ON b.driverId = d.id
-       WHERE b.customerId = ?
-       ORDER BY b.createdAt DESC LIMIT 10`,
-      [user.profileId]
-    );
+    let bookings = [];
+    if (user.profileId) {
+      const [bks]: any = await pool.execute(
+        `SELECT b.*, v.name as vehicleTypeName, d.fullName as driverName
+         FROM bookings b
+         LEFT JOIN vehicle_types v ON b.vehicleTypeId = v.id
+         LEFT JOIN driver_profiles d ON b.driverId = d.id
+         WHERE b.customerId = ?
+         ORDER BY b.createdAt DESC LIMIT 10`,
+        [user.profileId]
+      );
+      bookings = bks;
+    }
 
     const response = {
       id: user.profileId || user.id,
       fullName: user.fullName || 'Unknown',
-      address: user.address, city: user.city, state: user.state, pincode: user.pincode,
-      photoUrl: user.photoUrl, emergencyContactName: user.emergencyContactName, 
-      emergencyContactNumber: user.emergencyContactNumber, preferredLanguage: user.preferredLanguage,
-      savedPassengers: user.savedPassengers,
+      address: user.address || '', city: user.city || '', state: user.state || '', pincode: user.pincode || '',
+      photoUrl: user.photoUrl || null, emergencyContactName: user.emergencyContactName || '', 
+      emergencyContactNumber: user.emergencyContactNumber || '', preferredLanguage: user.preferredLanguage || 'en',
+      savedPassengers: user.savedPassengers || null,
       user: {
         id: user.id, email: user.email, mobile: user.mobile, isActive: user.status === 'ACTIVE', lastLoginAt: user.lastLoginAt, createdAt: user.createdAt,
       },
