@@ -67,7 +67,7 @@ export default function DriverDetailModal({ driverId, onClose, onChanged }: { dr
           <Input label="Full Name" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
           <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <Input label="Licence Number" value={form.licenceNumber} onChange={(e) => setForm({ ...form, licenceNumber: e.target.value })} />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input label="City" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
             <Input label="State" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} />
           </div>
@@ -78,16 +78,16 @@ export default function DriverDetailModal({ driverId, onClose, onChanged }: { dr
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
             <StatusBadge status={driver.status} />
             <StatusBadge status={driver.user.isActive ? 'ACTIVE' : 'INACTIVE'} />
           </div>
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div><p className="text-slate-500">Mobile</p><p className="font-medium">{driver.user.mobile}</p></div>
             <div><p className="text-slate-500">Email</p><p className="font-medium">{driver.user.email || '—'}</p></div>
             <div><p className="text-slate-500">Licence Number</p><p className="font-medium">{driver.licenceNumber}</p></div>
             <div><p className="text-slate-500">Location</p><p className="font-medium">{[driver.city, driver.state].filter(Boolean).join(', ') || '—'}</p></div>
-            <div><p className="text-slate-500">Assigned Vehicle</p><p className="font-medium">{driver.assignedVehicle ? `${driver.assignedVehicle.make} ${driver.assignedVehicle.model} · ${driver.assignedVehicle.registrationNumber}` : 'Unassigned'}</p></div>
+            <div className="col-span-1 sm:col-span-2"><p className="text-slate-500">Assigned Vehicle</p><p className="font-medium">{driver.assignedVehicle ? `${driver.assignedVehicle.make} ${driver.assignedVehicle.model} · ${driver.assignedVehicle.registrationNumber}` : 'Unassigned'}</p></div>
           </div>
           <Button variant="outline" className="w-full" onClick={() => setIsEditing(true)}>Edit Details</Button>
         </div>

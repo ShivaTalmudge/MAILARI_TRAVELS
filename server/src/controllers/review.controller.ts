@@ -41,14 +41,28 @@ export const createReview = async (req: Request, res: Response): Promise<void> =
 
 export const getReviews = async (req: Request, res: Response): Promise<void> => {
   try {
+    let whereClause = 'WHERE 1=1';
+    const params: any[] = [];
+
+    if (req.user?.role === Role.CUSTOMER) {
+      const [[profile]]: any = await pool.execute('SELECT id FROM customer_profiles WHERE userId = ?', [req.user.userId]);
+      if (profile) { whereClause += ' AND r.customerId = ?'; params.push(profile.id); }
+      else { sendSuccess(res, []); return; }
+    } else if (req.user?.role === Role.DRIVER) {
+      const [[profile]]: any = await pool.execute('SELECT id FROM driver_profiles WHERE userId = ?', [req.user.userId]);
+      if (profile) { whereClause += ' AND r.driverId = ?'; params.push(profile.id); }
+      else { sendSuccess(res, []); return; }
+    }
+
     const [reviews]: any = await pool.execute(`
       SELECT r.*, b.bookingNumber, c.fullName as customerName, d.fullName as driverName
       FROM reviews r
       JOIN bookings b ON r.bookingId = b.id
       JOIN customer_profiles c ON r.customerId = c.id
       LEFT JOIN driver_profiles d ON r.driverId = d.id
+      ${whereClause}
       ORDER BY r.createdAt DESC
-    `);
+    `, params);
     sendSuccess(res, reviews);
   } catch (err) {
     console.error(err);

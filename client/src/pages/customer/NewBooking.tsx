@@ -298,7 +298,7 @@ export default function NewBooking() {
                 <Input type="date" label="Return Date" value={form.returnDate} onChange={(e) => update({ returnDate: e.target.value })} />
               )}
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Input type="number" min={1} label="Passengers" value={form.passengerCount} onChange={(e) => update({ passengerCount: Number(e.target.value) })} />
               <Input type="number" min={0} label="Luggage" value={form.luggageCount} onChange={(e) => update({ luggageCount: Number(e.target.value) })} />
             </div>

@@ -30,8 +30,8 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
           onClick={onClose}
         />
         {/* Modal */}
-        <div className={cn('relative w-full rounded-xl bg-white shadow-2xl', sizeClasses[size])}>
-          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+        <div className={cn('relative w-full rounded-xl bg-white shadow-2xl flex flex-col', sizeClasses[size], 'max-h-[90vh]')}>
+          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 flex-shrink-0">
             <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
             <button
               onClick={onClose}
@@ -40,7 +40,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
               <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="p-6">{children}</div>
+          <div className="p-6 overflow-y-auto">{children}</div>
         </div>
       </div>
     </div>

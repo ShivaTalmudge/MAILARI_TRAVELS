@@ -210,8 +210,8 @@ export default function DriverTripDetail() {
               <p className="text-sm text-slate-600">UPI ID: <span className="font-mono">{qr.upiId}</span></p>
               {qr.instructions && <p className="text-xs text-slate-500">{qr.instructions}</p>}
               <p className="text-sm font-medium text-slate-700">Ask the customer to scan and pay {formatMoney(remaining)}.</p>
-              <Button className="w-full" onClick={() => setShowPaymentModal(true)}>
-                <CheckCircle2 className="mr-2 h-4 w-4" /> Payment Received
+              <Button size="lg" className="w-full text-base sm:text-lg py-6" onClick={() => setShowPaymentModal(true)}>
+                <CheckCircle2 className="mr-2 h-5 w-5" /> Payment Received
               </Button>
             </div>
           )}
@@ -236,7 +236,7 @@ export default function DriverTripDetail() {
           style={{ bottom: 'calc(4rem + env(safe-area-inset-bottom))' }}
         >
           <Button
-            className="h-12 w-full bg-green-600 text-white hover:bg-green-700 disabled:bg-slate-300"
+            className="h-16 text-lg w-full bg-green-600 text-white hover:bg-green-700 disabled:bg-slate-300"
             onClick={() => setShowCompleteModal(true)}
             disabled={!isFullyPaid}
           >

@@ -11,6 +11,7 @@ import { rateLimit } from 'express-rate-limit';
 import { config } from './config/env';
 import { errorHandler } from './middleware/errorHandler';
 import { notFoundHandler } from './middleware/notFoundHandler';
+import { requireIdempotency } from './middleware/idempotency';
 import { pool } from './config/db';
 
 // Routes
@@ -92,6 +93,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 app.use(compression());
+app.use(requireIdempotency);
 
 // ── Logging ───────────────────────────────────────────
 if (config.nodeEnv !== 'test') {

@@ -86,7 +86,7 @@ export default function VehicleDetailModal({ vehicleId, onClose, onChanged }: { 
       ) : (
         <div className="space-y-4">
           <StatusBadge status={vehicle.status} />
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div><p className="text-slate-500">Make &amp; Model</p><p className="font-medium">{vehicle.make} {vehicle.model} {vehicle.variant || ''}</p></div>
             <div><p className="text-slate-500">Type</p><p className="font-medium">{vehicle.vehicleType?.name || '—'}</p></div>
             <div><p className="text-slate-500">Year / Color</p><p className="font-medium">{vehicle.year} {vehicle.color || ''}</p></div>

@@ -302,9 +302,14 @@ export const updateBookingStatus = async (req: Request, res: Response): Promise<
       'INSERT INTO booking_status_history (id, bookingId, status, note, changedBy, changedByRole, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())',
       [historyId, id, status, note || null, req.user?.userId || null, req.user?.role || null]
     );
-    if (status === BookingStatus.TRIP_COMPLETED) {
+    if (status === BookingStatus.TRIP_COMPLETED || status === BookingStatus.CANCELLED || status === BookingStatus.CONFIRMED) {
       if (booking.driverId) await connection.execute('UPDATE driver_profiles SET status = "AVAILABLE" WHERE id = ?', [booking.driverId]);
       if (booking.vehicleId) await connection.execute('UPDATE vehicles SET status = "AVAILABLE" WHERE id = ?', [booking.vehicleId]);
+      
+      // If a trip is rejected/unassigned back to CONFIRMED, clear the assignments
+      if (status === BookingStatus.CONFIRMED) {
+        await connection.execute('UPDATE bookings SET driverId = NULL, vehicleId = NULL WHERE id = ?', [id]);
+      }
     }
     
     await connection.commit();

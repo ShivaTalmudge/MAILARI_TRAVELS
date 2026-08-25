@@ -66,7 +66,7 @@ export default function CustomerDetailModal({ userId, onClose, onChanged }: { us
         <div className="space-y-4">
           <Input label="Full Name" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
           <Input label="Address" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Input label="City" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
             <Input label="State" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} />
             <Input label="Pincode" value={form.pincode} onChange={(e) => setForm({ ...form, pincode: e.target.value })} />
@@ -79,10 +79,10 @@ export default function CustomerDetailModal({ userId, onClose, onChanged }: { us
       ) : (
         <div className="space-y-4">
           <StatusBadge status={customer.user.isActive ? 'ACTIVE' : 'INACTIVE'} />
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div><p className="text-slate-500">Mobile</p><p className="font-medium">{customer.user.mobile}</p></div>
             <div><p className="text-slate-500">Email</p><p className="font-medium">{customer.user.email || '—'}</p></div>
-            <div className="col-span-2"><p className="text-slate-500">Address</p><p className="font-medium">{[customer.address, customer.city, customer.state, customer.pincode].filter(Boolean).join(', ') || '—'}</p></div>
+            <div className="col-span-1 sm:col-span-2"><p className="text-slate-500">Address</p><p className="font-medium">{[customer.address, customer.city, customer.state, customer.pincode].filter(Boolean).join(', ') || '—'}</p></div>
           </div>
           {customer.bookings.length > 0 && (
             <div>

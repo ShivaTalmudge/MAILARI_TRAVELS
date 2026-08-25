@@ -112,12 +112,12 @@ export default function BookingDetailModal({ bookingId, onClose, onChanged }: { 
         <p className="text-sm text-slate-500">Loading...</p>
       ) : (
         <div className="space-y-5">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
             <StatusBadge status={booking.status} />
             <StatusBadge status={booking.paymentStatus} />
           </div>
 
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div><p className="text-slate-500">Customer</p><p className="font-medium">{booking.customer?.fullName || '—'}</p><p className="text-xs text-slate-500">{booking.customer?.user.mobile}</p></div>
             <div><p className="text-slate-500">Trip Type</p><p className="font-medium">{booking.tripType}</p></div>
             <div><p className="text-slate-500">Pickup</p><p className="font-medium">{booking.pickupLocation}</p></div>
@@ -134,22 +134,22 @@ export default function BookingDetailModal({ bookingId, onClose, onChanged }: { 
             )}
 
             {booking.status === 'CONFIRMED' && !booking.driver && (
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <Select value={selectedDriver} onChange={(e) => setSelectedDriver(e.target.value)} className="flex-1">
                   <option value="">Select available driver...</option>
                   {availableDrivers.map((d) => <option key={d.id} value={d.id}>{d.fullName} ({d.user.mobile})</option>)}
                 </Select>
-                <Button onClick={assignDriver} isLoading={isActing}>Assign Driver</Button>
+                <Button onClick={assignDriver} isLoading={isActing} className="w-full sm:w-auto">Assign Driver</Button>
               </div>
             )}
 
             {booking.driver && !booking.vehicle && (
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <Select value={selectedVehicle} onChange={(e) => setSelectedVehicle(e.target.value)} className="flex-1">
                   <option value="">Select available vehicle...</option>
                   {availableVehicles.map((v) => <option key={v.id} value={v.id}>{v.make} {v.model} · {v.registrationNumber}</option>)}
                 </Select>
-                <Button onClick={assignVehicle} isLoading={isActing}>Assign Vehicle</Button>
+                <Button onClick={assignVehicle} isLoading={isActing} className="w-full sm:w-auto">Assign Vehicle</Button>
               </div>
             )}
 

@@ -88,72 +88,110 @@ export function DataTable<T>({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
-        <table className="min-w-full divide-y divide-slate-200">
-          <thead className="bg-slate-50">
-            <tr>
-              {allColumns.map((col) => (
-                <th
-                  key={col.key}
-                  className={cn(
-                    'px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap',
-                    col.sortable && 'cursor-pointer select-none hover:bg-slate-100',
-                    col.className
-                  )}
-                  onClick={() => col.sortable && onSort?.(col.key)}
-                >
-                  <div className="flex items-center gap-1">
-                    {col.label}
-                    {col.sortable && onSort && (
-                      <span className="text-slate-400">
-                        {sortConfig?.key === col.key ? (
-                          sortConfig.direction === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
-                        ) : (
-                          <ChevronsUpDown className="h-3 w-3" />
-                        )}
-                      </span>
-                    )}
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} columns={allColumns.length} />)
-            ) : data.length === 0 ? (
-              <tr>
-                <td colSpan={allColumns.length} className="px-4 py-16 text-center">
-                  <div className="flex flex-col items-center gap-3 text-slate-400">
-                    {emptyIcon && <div className="text-slate-300">{emptyIcon}</div>}
-                    <p className="text-sm">{emptyMessage}</p>
-                  </div>
-                </td>
-              </tr>
-            ) : (
-              data.map((row, i) => (
-                <tr
-                  key={i}
-                  className={cn(
-                    'transition-colors hover:bg-slate-50',
-                    rowClassName?.(row)
-                  )}
-                >
-                  {columns.map((col) => (
-                    <td key={col.key} className={cn('px-4 py-3 text-sm text-slate-700 whitespace-nowrap', col.className)}>
+      <div className="rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+        {/* Mobile View (Cards) */}
+        <div className="block md:hidden bg-slate-50 divide-y divide-slate-200">
+          {isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="p-4 animate-pulse space-y-3">
+                <div className="h-4 bg-slate-200 rounded w-1/2"></div>
+                <div className="h-4 bg-slate-200 rounded w-3/4"></div>
+              </div>
+            ))
+          ) : data.length === 0 ? (
+            <div className="p-8 text-center text-slate-400">
+              {emptyIcon && <div className="text-slate-300 mb-2">{emptyIcon}</div>}
+              <p className="text-sm">{emptyMessage}</p>
+            </div>
+          ) : (
+            data.map((row, i) => (
+              <div key={i} className={cn('p-4 space-y-3 bg-white', rowClassName?.(row))}>
+                {columns.map((col) => (
+                  <div key={col.key} className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-slate-500 uppercase">{col.label}</span>
+                    <div className="text-sm text-slate-800 break-words">
                       {col.render ? col.render(row) : String((row as any)[col.key] ?? '—')}
-                    </td>
-                  ))}
-                  {actions && (
-                    <td className="px-4 py-3 text-right">
-                      {actions(row)}
-                    </td>
-                  )}
+                    </div>
+                  </div>
+                ))}
+                {actions && (
+                  <div className="pt-2 mt-2 border-t border-slate-100 flex justify-end">
+                    {actions(row)}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Desktop View (Table) */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                {allColumns.map((col) => (
+                  <th
+                    key={col.key}
+                    className={cn(
+                      'px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap',
+                      col.sortable && 'cursor-pointer select-none hover:bg-slate-100',
+                      col.className
+                    )}
+                    onClick={() => col.sortable && onSort?.(col.key)}
+                  >
+                    <div className="flex items-center gap-1">
+                      {col.label}
+                      {col.sortable && onSort && (
+                        <span className="text-slate-400">
+                          {sortConfig?.key === col.key ? (
+                            sortConfig.direction === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                          ) : (
+                            <ChevronsUpDown className="h-3 w-3" />
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} columns={allColumns.length} />)
+              ) : data.length === 0 ? (
+                <tr>
+                  <td colSpan={allColumns.length} className="px-4 py-16 text-center">
+                    <div className="flex flex-col items-center gap-3 text-slate-400">
+                      {emptyIcon && <div className="text-slate-300">{emptyIcon}</div>}
+                      <p className="text-sm">{emptyMessage}</p>
+                    </div>
+                  </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                data.map((row, i) => (
+                  <tr
+                    key={i}
+                    className={cn(
+                      'transition-colors hover:bg-slate-50',
+                      rowClassName?.(row)
+                    )}
+                  >
+                    {columns.map((col) => (
+                      <td key={col.key} className={cn('px-4 py-3 text-sm text-slate-700 whitespace-nowrap', col.className)}>
+                        {col.render ? col.render(row) : String((row as any)[col.key] ?? '—')}
+                      </td>
+                    ))}
+                    {actions && (
+                      <td className="px-4 py-3 text-right">
+                        {actions(row)}
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {pagination && pagination.totalPages > 1 && (

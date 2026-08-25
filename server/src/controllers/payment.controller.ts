@@ -49,16 +49,26 @@ export const createPayment = async (req: Request, res: Response): Promise<void> 
   const { bookingId, amount, paymentMethod, transactionRef, notes, paymentDate } = req.body;
 
   try {
-    const [[booking]]: any = await pool.execute(`SELECT b.*, c.userId as customerUserId FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id WHERE b.id = ?`, [bookingId]);
-    if (!booking) { sendNotFound(res, 'Booking not found'); return; }
-
     const paymentNumber = await generatePaymentNumber();
     const paymentId = uuidv4();
     const amt = parseFloat(amount);
 
     const connection = await pool.getConnection();
+    let booking: any = null;
     try {
       await connection.beginTransaction();
+      
+      const [[lockedBooking]]: any = await connection.execute(
+        `SELECT b.*, c.userId as customerUserId FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id WHERE b.id = ? FOR UPDATE`,
+        [bookingId]
+      );
+      
+      if (!lockedBooking) {
+        await connection.rollback();
+        sendNotFound(res, 'Booking not found');
+        return;
+      }
+      booking = lockedBooking;
       await connection.execute(
         `INSERT INTO payments (id, paymentNumber, bookingId, amount, paymentMethod, status, transactionRef, paymentDate, notes, createdAt, updatedAt)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
@@ -116,15 +126,74 @@ export const updatePaymentStatus = async (req: Request, res: Response): Promise<
   const { id } = req.params;
   const { status } = req.body;
 
-  try {
-    const [[payment]]: any = await pool.execute('SELECT id FROM payments WHERE id = ?', [id]);
-    if (!payment) { sendNotFound(res, 'Payment not found'); return; }
+  if (!Object.values(PaymentStatus).includes(status)) {
+    sendError(res, 'Invalid payment status', 400);
+    return;
+  }
 
-    await pool.execute('UPDATE payments SET status = ? WHERE id = ?', [status, id]);
-    await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'STATUS_CHANGE', entity: 'Payment', entityId: id, description: `Payment status changed to ${status}` });
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // Lock payment and booking
+    const [[payment]]: any = await connection.execute('SELECT * FROM payments WHERE id = ? FOR UPDATE', [id]);
+    if (!payment) {
+      await connection.rollback();
+      sendNotFound(res, 'Payment not found');
+      return;
+    }
+
+    if (payment.status === status) {
+      await connection.rollback();
+      sendSuccess(res, null, 'Payment status is already ' + status);
+      return;
+    }
+
+    const [[booking]]: any = await connection.execute('SELECT * FROM bookings WHERE id = ? FOR UPDATE', [payment.bookingId]);
+    if (!booking) {
+      await connection.rollback();
+      sendError(res, 'Associated booking not found', 500);
+      return;
+    }
+
+    // Calculate delta for paidAmount
+    let amountDelta = 0;
+    if (payment.status === PaymentStatus.PAID && status !== PaymentStatus.PAID) {
+      // Payment was marked as paid, but now failed/refunded/cancelled. Deduct from paidAmount.
+      amountDelta = -Number(payment.amount);
+    } else if (payment.status !== PaymentStatus.PAID && status === PaymentStatus.PAID) {
+      // Payment was not paid, but now is. Add to paidAmount.
+      amountDelta = Number(payment.amount);
+    }
+
+    let newPaidAmount = Number(booking.paidAmount) + amountDelta;
+    if (newPaidAmount < 0) newPaidAmount = 0; // Prevent negative paid amounts
+
+    let newBookingPaymentStatus = booking.paymentStatus;
+    if (newPaidAmount === 0) {
+      newBookingPaymentStatus = PaymentStatus.PENDING;
+    } else if (newPaidAmount >= Number(booking.totalAmount)) {
+      newBookingPaymentStatus = PaymentStatus.PAID;
+    } else {
+      newBookingPaymentStatus = PaymentStatus.PARTIALLY_PAID;
+    }
+
+    await connection.execute('UPDATE payments SET status = ?, updatedAt = NOW() WHERE id = ?', [status, id]);
+    
+    if (amountDelta !== 0) {
+      await connection.execute('UPDATE bookings SET paidAmount = ?, paymentStatus = ? WHERE id = ?', [newPaidAmount, newBookingPaymentStatus, booking.id]);
+    }
+
+    await connection.commit();
+
+    await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'STATUS_CHANGE', entity: 'Payment', entityId: id, description: `Payment status changed to ${status}, booking paid amount updated to ₹${newPaidAmount}`, ipAddress: req.ip });
+    
     sendSuccess(res, null, 'Payment status updated');
   } catch (err) {
+    await connection.rollback();
     console.error(err);
     sendError(res, 'Internal server error');
+  } finally {
+    connection.release();
   }
 };

@@ -167,22 +167,22 @@ export default function DriverDashboard() {
                  
                  <div className="pt-6 mt-6 border-t flex flex-col gap-3">
                     {activeTrip.status === 'DRIVER_ACCEPTED' && (
-                      <Button onClick={() => updateTripStatus(activeTrip.id, 'DRIVER_ON_THE_WAY')} isLoading={isUpdating}>
+                      <Button size="lg" className="w-full text-base sm:text-lg py-6" onClick={() => updateTripStatus(activeTrip.id, 'DRIVER_ON_THE_WAY')} isLoading={isUpdating}>
                         Start Journey to Pickup
                       </Button>
                     )}
                     {activeTrip.status === 'DRIVER_ON_THE_WAY' && (
-                      <Button onClick={() => updateTripStatus(activeTrip.id, 'ARRIVED')} isLoading={isUpdating}>
+                      <Button size="lg" className="w-full text-base sm:text-lg py-6" onClick={() => updateTripStatus(activeTrip.id, 'ARRIVED')} isLoading={isUpdating}>
                         Mark as Arrived
                       </Button>
                     )}
                     {activeTrip.status === 'ARRIVED' && (
-                      <Button onClick={() => setShowStartTripModal(true)} variant="primary" isLoading={isUpdating}>
+                      <Button size="lg" className="w-full text-base sm:text-lg py-6" onClick={() => setShowStartTripModal(true)} variant="primary" isLoading={isUpdating}>
                         Start Trip with Customer
                       </Button>
                     )}
                     {activeTrip.status === 'TRIP_STARTED' && (
-                      <Button onClick={() => navigate(`/driver/trips/${activeTrip.id}`)} className="bg-green-600 hover:bg-green-700 text-white">
+                      <Button size="lg" className="w-full text-base sm:text-lg py-6 bg-green-600 hover:bg-green-700 text-white" onClick={() => navigate(`/driver/trips/${activeTrip.id}`)}>
                         View Payment &amp; Complete Trip
                       </Button>
                     )}
