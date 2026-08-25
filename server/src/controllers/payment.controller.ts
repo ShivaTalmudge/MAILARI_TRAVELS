@@ -20,23 +20,22 @@ export const getPayments = async (req: Request, res: Response): Promise<void> =>
       const [[profile]]: any = await pool.execute('SELECT id FROM customer_profiles WHERE userId = ?', [req.user.userId]);
       if (profile) { whereClause += ' AND b.customerId = ?'; params.push(profile.id); }
     } else if (req.user?.role === Role.DRIVER) {
-      // Drivers may only see payments they personally collected — not the
-      // whole company's payment history.
+      // Drivers may only see payments for bookings they drove
       const [[profile]]: any = await pool.execute('SELECT id FROM driver_profiles WHERE userId = ?', [req.user.userId]);
-      whereClause += ' AND p.collectedBy = ?'; params.push(profile?.id || null);
+      whereClause += ' AND b.driverId = ?'; params.push(profile?.id || null);
     }
 
     const [[{ total }]]: any = await pool.execute(`SELECT COUNT(*) as total FROM payments p LEFT JOIN bookings b ON p.bookingId = b.id ${whereClause}`, params);
 
     params.push(take, skip);
     const [paymentsRaw]: any = await pool.execute(
-      `SELECT p.*, b.bookingNumber, b.totalAmount, c.fullName as customerName
+      `SELECT p.*, b.bookingNumber, b.totalAmount, b.driverAllowance, c.fullName as customerName
        FROM payments p LEFT JOIN bookings b ON p.bookingId = b.id LEFT JOIN customer_profiles c ON b.customerId = c.id
        ${whereClause} ORDER BY p.createdAt DESC LIMIT ? OFFSET ?`, params
     );
 
     const payments = paymentsRaw.map((p: any) => ({
-      ...p, booking: p.bookingNumber ? { bookingNumber: p.bookingNumber, totalAmount: p.totalAmount, customer: p.customerName ? { fullName: p.customerName } : null } : null
+      ...p, booking: p.bookingNumber ? { bookingNumber: p.bookingNumber, totalAmount: p.totalAmount, driverAllowance: p.driverAllowance, customer: p.customerName ? { fullName: p.customerName } : null } : null
     }));
 
     sendSuccess(res, payments, 'Payments fetched', 200, { total, page, limit, totalPages: Math.ceil(total / limit) });
@@ -101,7 +100,7 @@ export const getPaymentById = async (req: Request, res: Response): Promise<void>
     }
     if (req.user?.role === Role.DRIVER) {
       const [[profile]]: any = await pool.execute('SELECT id FROM driver_profiles WHERE userId = ?', [req.user.userId]);
-      if (payment.collectedBy !== profile?.id) { res.status(403).json({ success: false, message: 'Forbidden' }); return; }
+      if (booking?.driverId !== profile?.id) { res.status(403).json({ success: false, message: 'Forbidden' }); return; }
     }
 
     payment.booking = booking ? { ...booking, customer: booking.customerName ? { fullName: booking.customerName } : null } : null;

@@ -11,6 +11,7 @@ interface AuditLog {
   description: string;
   createdAt: string;
   user: { mobile: string; email: string | null; role: string } | null;
+  metadata?: any;
 }
 
 export default function AdminAuditLogs() {
@@ -44,7 +45,16 @@ export default function AdminAuditLogs() {
     { key: 'createdAt', label: 'Time', render: (row) => <span className="whitespace-nowrap text-slate-500">{new Date(row.createdAt).toLocaleString('en-IN')}</span> },
     { key: 'action', label: 'Action', render: (row) => <span className="font-mono text-xs font-medium">{row.action}</span> },
     { key: 'entity', label: 'Entity', render: (row) => <span>{row.entity}{row.entityId ? ` · ${row.entityId.slice(0, 8)}` : ''}</span> },
-    { key: 'description', label: 'Description', render: (row) => <span className="text-slate-700">{row.description}</span> },
+    { key: 'description', label: 'Description', render: (row) => (
+      <div>
+        <span className="text-slate-700">{row.description}</span>
+        {row.metadata && (
+          <pre className="mt-1 text-[10px] text-slate-500 bg-slate-50 p-1 rounded border border-slate-100 max-w-xs overflow-auto">
+            {JSON.stringify(row.metadata, null, 2)}
+          </pre>
+        )}
+      </div>
+    )},
     { key: 'user', label: 'By', render: (row) => <span className="text-xs text-slate-500">{row.user ? `${row.user.role} · ${row.user.mobile}` : 'System'}</span> },
   ];
 

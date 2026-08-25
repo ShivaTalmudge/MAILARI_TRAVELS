@@ -32,6 +32,7 @@ import reportRoutes from './routes/report.routes';
 import auditLogRoutes from './routes/auditLog.routes';
 import settingRoutes from './routes/setting.routes';
 import dashboardRoutes from './routes/dashboard.routes';
+import reviewRoutes from './routes/review.routes';
 
 const app = express();
 
@@ -140,6 +141,8 @@ app.use('/api/support', supportRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/settings', settingRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 // ── Static Frontend Serving (Production) ──────────────
 if (config.nodeEnv === 'production') {

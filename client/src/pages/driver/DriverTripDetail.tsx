@@ -48,6 +48,11 @@ export default function DriverTripDetail() {
   const [transactionRef, setTransactionRef] = useState('');
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
+  
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [endKm, setEndKm] = useState('');
+  const [tolls, setTolls] = useState('0');
+  const [parking, setParking] = useState('0');
 
   const fetchAll = async () => {
     try {
@@ -90,9 +95,16 @@ export default function DriverTripDetail() {
 
   const completeTrip = async () => {
     try {
+      if (!endKm) { toast('End KM is required', 'error'); return; }
       setIsCompleting(true);
-      await api.patch(`/bookings/${id}/status`, { status: 'TRIP_COMPLETED' });
+      await api.patch(`/bookings/${id}/status`, { 
+        status: 'TRIP_COMPLETED',
+        endKm: Number(endKm),
+        tolls: Number(tolls || 0),
+        parking: Number(parking || 0)
+      });
       toast('Trip completed', 'success');
+      setShowCompleteModal(false);
       navigate('/driver/trips');
     } catch (error: any) {
       toast(error?.response?.data?.message || 'Failed to complete trip', 'error');
@@ -225,14 +237,62 @@ export default function DriverTripDetail() {
         >
           <Button
             className="h-12 w-full bg-green-600 text-white hover:bg-green-700 disabled:bg-slate-300"
-            onClick={completeTrip}
-            isLoading={isCompleting}
+            onClick={() => setShowCompleteModal(true)}
             disabled={!isFullyPaid}
           >
-            {isFullyPaid ? 'Complete Trip' : 'Payment pending — confirm payment to complete trip'}
+            {isFullyPaid ? 'Complete Trip Details' : 'Payment pending — confirm payment to complete trip'}
           </Button>
         </div>
       )}
+
+      <Modal isOpen={showCompleteModal} onClose={() => setShowCompleteModal(false)} title="Complete Trip Details">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">Please enter the final trip details to complete the journey.</p>
+          
+          <div>
+            <label className="text-sm font-medium text-slate-700">End Odometer (KM) *</label>
+            <input
+              type="number"
+              value={endKm}
+              onChange={(e) => setEndKm(e.target.value)}
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              placeholder="e.g. 45500"
+              required
+            />
+          </div>
+          
+          <div>
+            <label className="text-sm font-medium text-slate-700">Toll Charges (₹)</label>
+            <input
+              type="number"
+              value={tolls}
+              onChange={(e) => setTolls(e.target.value)}
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              placeholder="0"
+            />
+          </div>
+          
+          <div>
+            <label className="text-sm font-medium text-slate-700">Parking Charges (₹)</label>
+            <input
+              type="number"
+              value={parking}
+              onChange={(e) => setParking(e.target.value)}
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              placeholder="0"
+            />
+          </div>
+
+          <div className="flex gap-3 mt-6">
+            <Button variant="outline" className="flex-1" onClick={() => setShowCompleteModal(false)} disabled={isCompleting}>
+              Cancel
+            </Button>
+            <Button className="flex-1" onClick={completeTrip} isLoading={isCompleting}>
+              Finish &amp; Complete
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} title="Confirm Payment Received">
         <div className="space-y-4">

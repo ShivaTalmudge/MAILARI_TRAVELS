@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
-import { StatusBadge } from '../../components/ui/StatusBadge';
 import { useToast } from '../../hooks/useToast';
 import { Wallet } from 'lucide-react';
 
@@ -12,7 +11,7 @@ interface Payment {
   paymentMethod: string;
   status: string;
   createdAt: string;
-  booking: { bookingNumber: string } | null;
+  booking: { bookingNumber: string; driverAllowance?: number | string } | null;
 }
 
 const formatMoney = (v: number) => `₹${Math.round(v).toLocaleString('en-IN')}`;
@@ -79,9 +78,9 @@ export default function DriverEarnings() {
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-4 py-3">Booking</th>
-                <th className="px-4 py-3">Amount</th>
+                <th className="px-4 py-3">Payment Collected</th>
+                <th className="px-4 py-3">Driver Allowance</th>
                 <th className="px-4 py-3">Method</th>
-                <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Date</th>
               </tr>
             </thead>
@@ -90,8 +89,10 @@ export default function DriverEarnings() {
                 <tr key={p.id}>
                   <td className="px-4 py-3 text-slate-600">{p.booking?.bookingNumber || '—'}</td>
                   <td className="px-4 py-3 font-semibold">{formatMoney(Number(p.amount))}</td>
+                  <td className="px-4 py-3 font-semibold text-green-600">
+                    {p.booking?.driverAllowance ? formatMoney(Number(p.booking.driverAllowance)) : '—'}
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{p.paymentMethod}</td>
-                  <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
                   <td className="px-4 py-3 text-slate-500">{new Date(p.createdAt).toLocaleDateString('en-IN')}</td>
                 </tr>
               ))}

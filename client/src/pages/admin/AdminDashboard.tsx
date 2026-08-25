@@ -32,6 +32,7 @@ interface RecentBooking {
 export default function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentBookings, setRecentBookings] = useState<RecentBooking[]>([]);
+  const [expiringDocuments, setExpiringDocuments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -40,6 +41,7 @@ export default function AdminDashboard() {
         const { data } = await api.get('/dashboard/admin');
         setStats(data.data.stats);
         setRecentBookings(data.data.recentBookings);
+        setExpiringDocuments(data.data.expiringDocuments || []);
       } catch (error) {
         console.error('Failed to fetch dashboard', error);
       } finally {
@@ -141,6 +143,33 @@ export default function AdminDashboard() {
              </div>
           </CardContent>
         </Card>
+
+        {expiringDocuments && expiringDocuments.length > 0 && (
+          <Card className="border-red-200 col-span-1 lg:col-span-2">
+            <CardHeader className="bg-red-50 border-b border-red-100">
+              <CardTitle className="text-red-700 flex items-center gap-2">
+                Action Required: Expiring Documents
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y">
+                {expiringDocuments.map((doc: any) => (
+                  <div key={doc.id} className="p-4 flex justify-between items-center hover:bg-slate-50">
+                    <div>
+                      <p className="font-semibold">{doc.registrationNumber}</p>
+                      <p className="text-sm text-slate-500">
+                        {doc.insuranceExpiry && new Date(doc.insuranceExpiry) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) && <span className="mr-3 text-red-600">Insurance Expiring</span>}
+                        {doc.pucExpiry && new Date(doc.pucExpiry) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) && <span className="mr-3 text-red-600">PUC Expiring</span>}
+                        {doc.permitExpiry && new Date(doc.permitExpiry) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) && <span className="mr-3 text-red-600">Permit Expiring</span>}
+                        {doc.fitnessExpiry && new Date(doc.fitnessExpiry) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) && <span className="mr-3 text-red-600">Fitness Expiring</span>}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

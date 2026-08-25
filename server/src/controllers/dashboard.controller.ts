@@ -24,7 +24,8 @@ export const getAdminDashboard = async (_req: Request, res: Response): Promise<v
       [[{ pendingPaymentsAmount }]],
       [monthlyRevenueRaw],
       [bookingsByStatusRaw],
-      [recentBookingsRaw]
+      [recentBookingsRaw],
+      [expiringDocumentsRaw]
     ]: any = await Promise.all([
       pool.execute('SELECT COUNT(*) as todayBookings FROM bookings WHERE pickupDate >= ? AND pickupDate < ?', [today, tomorrow]),
       pool.execute('SELECT COUNT(*) as upcomingTrips FROM bookings WHERE pickupDate >= ? AND status IN (?, ?)', [tomorrow, BookingStatus.CONFIRMED, BookingStatus.DRIVER_ASSIGNED]),
@@ -39,7 +40,8 @@ export const getAdminDashboard = async (_req: Request, res: Response): Promise<v
       pool.execute('SELECT SUM(totalAmount) as pendingPaymentsAmount FROM bookings WHERE paymentStatus = "PENDING" AND status = ?', [BookingStatus.TRIP_COMPLETED]),
       pool.execute(`SELECT DATE(paymentDate) as paymentDate, SUM(amount) as amount FROM payments WHERE status = 'PAID' AND paymentDate >= DATE_SUB(NOW(), INTERVAL 180 DAY) GROUP BY DATE(paymentDate) ORDER BY paymentDate ASC`),
       pool.execute('SELECT status, COUNT(id) as _count FROM bookings GROUP BY status'),
-      pool.execute(`SELECT b.*, c.fullName as customerName, vt.name as vehicleTypeName FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id LEFT JOIN vehicle_types vt ON b.vehicleTypeId = vt.id ORDER BY b.createdAt DESC LIMIT 10`)
+      pool.execute(`SELECT b.*, c.fullName as customerName, vt.name as vehicleTypeName FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id LEFT JOIN vehicle_types vt ON b.vehicleTypeId = vt.id ORDER BY b.createdAt DESC LIMIT 10`),
+      pool.execute(`SELECT id, registrationNumber, insuranceExpiry, pucExpiry, permitExpiry, fitnessExpiry FROM vehicles WHERE (insuranceExpiry < DATE_ADD(NOW(), INTERVAL 30 DAY) OR pucExpiry < DATE_ADD(NOW(), INTERVAL 30 DAY) OR permitExpiry < DATE_ADD(NOW(), INTERVAL 30 DAY) OR fitnessExpiry < DATE_ADD(NOW(), INTERVAL 30 DAY)) AND status != 'INACTIVE'`)
     ]);
 
     const recentBookings = recentBookingsRaw.map((b: any) => ({
@@ -48,6 +50,7 @@ export const getAdminDashboard = async (_req: Request, res: Response): Promise<v
     
     const bookingsByStatus = bookingsByStatusRaw.map((b: any) => ({ status: b.status, _count: { id: b._count } }));
     const monthlyRevenue = monthlyRevenueRaw.map((r: any) => ({ paymentDate: r.paymentDate, _sum: { amount: r.amount } }));
+    const expiringDocuments = expiringDocumentsRaw;
 
     sendSuccess(res, {
       stats: {
@@ -57,6 +60,7 @@ export const getAdminDashboard = async (_req: Request, res: Response): Promise<v
       },
       charts: { monthlyRevenue, bookingsByStatus },
       recentBookings,
+      expiringDocuments
     });
   } catch (err) {
     console.error(err);

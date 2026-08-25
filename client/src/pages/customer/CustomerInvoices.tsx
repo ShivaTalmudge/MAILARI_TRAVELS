@@ -3,7 +3,9 @@ import api from '../../services/api';
 import { Card, CardContent } from '../../components/ui/Card';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { useToast } from '../../hooks/useToast';
-import { FileText } from 'lucide-react';
+import { FileText, Printer } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Button } from '../../components/ui/Button';
 
 interface Invoice {
   id: string;
@@ -23,6 +25,7 @@ export default function CustomerInvoices() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const toast = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
     (async () => {
@@ -76,6 +79,11 @@ export default function CustomerInvoices() {
                   <td className="px-4 py-3 font-semibold">{formatMoney(inv.totalAmount)}</td>
                   <td className="px-4 py-3"><StatusBadge status={inv.paymentStatus} /></td>
                   <td className="px-4 py-3 text-slate-500">{new Date(inv.createdAt).toLocaleDateString('en-IN')}</td>
+                  <td className="px-4 py-3 text-right">
+                    <Button variant="outline" size="sm" onClick={() => navigate(`/customer/invoices/${inv.id}/print`)}>
+                      <Printer className="mr-2 h-4 w-4" /> Print
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>

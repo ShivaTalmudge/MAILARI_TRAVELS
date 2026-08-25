@@ -13,6 +13,7 @@
     "build:server": "cd server && npm run build",
     "start": "cd server && npm run start",
     "db:migrate": "cd server && npm run db:migrate",
+    "db:migrate:prod": "cd server && npm run db:migrate:prod",
     "db:seed:dev": "cd server && npm run db:seed:dev",
     "db:create-admin": "cd server && npm run db:create-admin",
     "install:all": "npm install && cd client && npm install && cd ../server && npm install",

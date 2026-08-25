@@ -3,6 +3,8 @@ import api from '../../services/api';
 import { Modal } from '../../components/ui/Modal';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { useToast } from '../../hooks/useToast';
+import { Button } from '../../components/ui/Button';
+import { LeaveReviewModal } from './LeaveReviewModal';
 
 interface BookingDetail {
   bookingNumber: string;
@@ -25,6 +27,7 @@ export default function CustomerBookingDetailModal({ bookingId, onClose }: { boo
   const toast = useToast();
   const [booking, setBooking] = useState<BookingDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [showReviewModal, setShowReviewModal] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -66,7 +69,26 @@ export default function CustomerBookingDetailModal({ bookingId, onClose }: { boo
               Call Driver: {booking.driver.user.mobile}
             </a>
           )}
+          
+          {booking.status === 'TRIP_COMPLETED' && (
+            <div className="pt-4 border-t border-slate-100 flex justify-center">
+              <Button onClick={() => setShowReviewModal(true)} variant="outline" className="w-full">
+                Leave a Review
+              </Button>
+            </div>
+          )}
         </div>
+      )}
+      
+      {showReviewModal && (
+        <LeaveReviewModal
+          bookingId={bookingId}
+          onClose={() => setShowReviewModal(false)}
+          onSuccess={() => {
+            setShowReviewModal(false);
+            // Could re-fetch if we wanted to show the review, but closing is fine
+          }}
+        />
       )}
     </Modal>
   );

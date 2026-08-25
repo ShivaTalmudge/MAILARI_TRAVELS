@@ -10,6 +10,7 @@ import { BottomNav, type BottomNavItem } from '../components/ui/BottomNav';
 const navigation = [
   { name: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
   { name: 'Bookings', href: '/admin/bookings', icon: CalendarRange },
+  { name: 'Dispatch', href: '/admin/dispatch', icon: CalendarRange },
   { name: 'Customers', href: '/admin/customers', icon: Users },
   { name: 'Drivers', href: '/admin/drivers', icon: Map },
   { name: 'Vehicles', href: '/admin/vehicles', icon: Car },
@@ -24,6 +25,7 @@ const mobileNavItems: BottomNavItem[] = [
 ];
 
 const mobileMoreItems: BottomNavItem[] = [
+  { name: 'Dispatch', href: '/admin/dispatch', icon: CalendarRange },
   { name: 'Customers', href: '/admin/customers', icon: Users },
   { name: 'Reports', href: '/admin/reports', icon: BarChart3 },
   { name: 'Pricing', href: '/admin/pricing', icon: Tag },

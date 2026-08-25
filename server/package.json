@@ -10,6 +10,7 @@
     "start": "node dist/index.js",
     "test": "jest --passWithNoTests",
     "db:migrate": "ts-node src/scripts/migrate.ts",
+    "db:migrate:prod": "node dist/scripts/migrate.js",
     "db:seed:dev": "ts-node src/scripts/seedDev.ts",
     "db:create-admin": "ts-node src/scripts/createAdmin.ts"
   },

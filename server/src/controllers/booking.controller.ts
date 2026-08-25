@@ -230,25 +230,28 @@ export const getBookingById = async (req: Request, res: Response): Promise<void>
 
 export const updateBookingStatus = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { status, note, adminOverride, overrideReason } = req.body;
+  const { status, note, adminOverride, overrideReason, startKm, endKm, tolls, parking } = req.body;
 
+  let completedWithoutPayment = false;
+  let bookingData: any = null;
+
+  const connection = await pool.getConnection();
   try {
-    const [[booking]]: any = await pool.execute(
-      `SELECT b.*, c.userId as customerUserId, u.mobile as customerMobile, u.email as customerEmail, c.fullName as customerName
-       FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id LEFT JOIN users u ON c.userId = u.id WHERE b.id = ?`, [id]
-    );
-    if (!booking) { sendNotFound(res, 'Booking not found'); return; }
+    await connection.beginTransaction();
 
-    // This endpoint drives the driver-facing trip lifecycle and admin
-    // corrections. Customers have a dedicated /cancel endpoint instead —
-    // they have no legitimate transition to make here.
-    if (req.user?.role === Role.CUSTOMER) { sendForbidden(res); return; }
+    const [[booking]]: any = await connection.execute(
+      `SELECT b.*, c.userId as customerUserId, u.mobile as customerMobile, u.email as customerEmail, c.fullName as customerName
+       FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id LEFT JOIN users u ON c.userId = u.id WHERE b.id = ? FOR UPDATE`, [id]
+    );
+    if (!booking) { await connection.rollback(); sendNotFound(res, 'Booking not found'); return; }
+    bookingData = booking;
+
+    if (req.user?.role === Role.CUSTOMER) { await connection.rollback(); sendForbidden(res); return; }
 
     if (req.user?.role === Role.DRIVER) {
-      const [[driver]]: any = await pool.execute('SELECT id FROM driver_profiles WHERE userId = ?', [req.user.userId]);
+      const [[driver]]: any = await connection.execute('SELECT id FROM driver_profiles WHERE userId = ?', [req.user.userId]);
       if (!driver || booking.driverId !== driver.id) {
-        sendForbidden(res, 'You are not assigned to this booking.');
-        return;
+        await connection.rollback(); sendForbidden(res, 'You are not assigned to this booking.'); return;
       }
     }
 
@@ -263,84 +266,93 @@ export const updateBookingStatus = async (req: Request, res: Response): Promise<
     };
 
     const allowedNext = VALID_TRANSITIONS[booking.status] || [];
-    if (!allowedNext.includes(status)) { sendError(res, `Cannot transition from ${booking.status} to ${status}.`, 400); return; }
+    if (!allowedNext.includes(status)) { await connection.rollback(); sendError(res, `Cannot transition from ${booking.status} to ${status}.`, 400); return; }
 
-    // Payment gate: a trip cannot be marked complete while money is still
-    // owed. Only an ADMIN may bypass this, and only with an explicit,
-    // audited reason — drivers never get this option.
-    let completedWithoutPayment = false;
     if (status === BookingStatus.TRIP_COMPLETED) {
       const isPaid = Number(booking.paidAmount || 0) >= Number(booking.totalAmount || 0);
       if (!isPaid) {
         if (req.user?.role === Role.ADMIN && adminOverride === true) {
           if (!overrideReason || String(overrideReason).trim().length === 0) {
-            sendError(res, 'A reason is required to complete a trip without full payment.', 400);
-            return;
+            await connection.rollback(); sendError(res, 'A reason is required to complete a trip without full payment.', 400); return;
           }
           completedWithoutPayment = true;
         } else {
-          sendError(res, 'Payment pending. Confirm payment before completing the trip.', 400);
-          return;
+          await connection.rollback(); sendError(res, 'Payment pending. Confirm payment before completing the trip.', 400); return;
         }
       }
     }
 
     const historyId = uuidv4();
-    const connection = await pool.getConnection();
-    try {
-      await connection.beginTransaction();
-      await connection.execute('UPDATE bookings SET status = ? WHERE id = ?', [status, id]);
-      await connection.execute(
-        'INSERT INTO booking_status_history (id, bookingId, status, note, changedBy, changedByRole, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())',
-        [historyId, id, status, note || null, req.user?.userId || null, req.user?.role || null]
-      );
-      if (status === BookingStatus.TRIP_COMPLETED) {
-        if (booking.driverId) await connection.execute('UPDATE driver_profiles SET status = "AVAILABLE" WHERE id = ?', [booking.driverId]);
-        if (booking.vehicleId) await connection.execute('UPDATE vehicles SET status = "AVAILABLE" WHERE id = ?', [booking.vehicleId]);
-      }
-      await connection.commit();
-    } catch (e) {
-      await connection.rollback();
-      throw e;
-    } finally {
-      connection.release();
-    }
+    
+    // Build update query dynamically
+    let updateQuery = 'UPDATE bookings SET status = ?';
+    const updateParams: any[] = [status];
 
+    if (startKm !== undefined) { updateQuery += ', startKm = ?'; updateParams.push(startKm); }
+    if (endKm !== undefined) { updateQuery += ', endKm = ?'; updateParams.push(endKm); }
+    if (tolls !== undefined) { updateQuery += ', tollCharges = ?'; updateParams.push(tolls); }
+    if (parking !== undefined) { updateQuery += ', parkingCharges = ?'; updateParams.push(parking); }
+    
+    updateQuery += ' WHERE id = ?';
+    updateParams.push(id);
+    
+    await connection.execute(updateQuery, updateParams);
+    
+    await connection.execute(
+      'INSERT INTO booking_status_history (id, bookingId, status, note, changedBy, changedByRole, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())',
+      [historyId, id, status, note || null, req.user?.userId || null, req.user?.role || null]
+    );
+    if (status === BookingStatus.TRIP_COMPLETED) {
+      if (booking.driverId) await connection.execute('UPDATE driver_profiles SET status = "AVAILABLE" WHERE id = ?', [booking.driverId]);
+      if (booking.vehicleId) await connection.execute('UPDATE vehicles SET status = "AVAILABLE" WHERE id = ?', [booking.vehicleId]);
+    }
+    
+    await connection.commit();
+  } catch (e) {
+    await connection.rollback();
+    console.error(e);
+    sendError(res, 'Internal server error');
+    return;
+  } finally {
+    connection.release();
+  }
+
+  try {
     if (completedWithoutPayment) {
       await createAuditLog({
         userId: req.user!.userId, userRole: req.user!.role,
         action: 'TRIP_COMPLETED_WITHOUT_PAYMENT', entity: 'Booking', entityId: id,
-        description: `Booking ${booking.bookingNumber} completed without full payment. Reason: ${overrideReason}`,
-        metadata: { totalAmount: booking.totalAmount, paidAmount: booking.paidAmount, reason: overrideReason },
+        description: `Booking ${bookingData.bookingNumber} completed without full payment. Reason: ${overrideReason}`,
+        metadata: { totalAmount: bookingData.totalAmount, paidAmount: bookingData.paidAmount, reason: overrideReason },
         ipAddress: req.ip,
       });
     }
 
     const notifMap: Record<string, { type: NotificationType; title: string; message: string }> = {
-      CONFIRMED: { type: NotificationType.BOOKING_CONFIRMED, title: 'Booking Confirmed', message: `Your booking ${booking.bookingNumber} has been confirmed.` },
-      DRIVER_ASSIGNED: { type: NotificationType.DRIVER_ASSIGNED, title: 'Driver Assigned', message: `A driver has been assigned to your booking ${booking.bookingNumber}.` },
-      DRIVER_ACCEPTED: { type: NotificationType.DRIVER_ACCEPTED, title: 'Driver Accepted', message: `Your driver has accepted the trip for booking ${booking.bookingNumber}.` },
-      DRIVER_ON_THE_WAY: { type: NotificationType.DRIVER_ON_THE_WAY, title: 'Driver On The Way', message: `Your driver is on the way for booking ${booking.bookingNumber}.` },
-      TRIP_STARTED: { type: NotificationType.TRIP_STARTED, title: 'Trip Started', message: `Your trip has started for booking ${booking.bookingNumber}.` },
+      CONFIRMED: { type: NotificationType.BOOKING_CONFIRMED, title: 'Booking Confirmed', message: `Your booking ${bookingData.bookingNumber} has been confirmed.` },
+      DRIVER_ASSIGNED: { type: NotificationType.DRIVER_ASSIGNED, title: 'Driver Assigned', message: `A driver has been assigned to your booking ${bookingData.bookingNumber}.` },
+      DRIVER_ACCEPTED: { type: NotificationType.DRIVER_ACCEPTED, title: 'Driver Accepted', message: `Your driver has accepted the trip for booking ${bookingData.bookingNumber}.` },
+      DRIVER_ON_THE_WAY: { type: NotificationType.DRIVER_ON_THE_WAY, title: 'Driver On The Way', message: `Your driver is on the way for booking ${bookingData.bookingNumber}.` },
+      TRIP_STARTED: { type: NotificationType.TRIP_STARTED, title: 'Trip Started', message: `Your trip has started for booking ${bookingData.bookingNumber}.` },
       TRIP_COMPLETED: { type: NotificationType.TRIP_COMPLETED, title: 'Trip Completed', message: `Your trip has been completed.` },
-      CANCELLED: { type: NotificationType.BOOKING_CANCELLED, title: 'Booking Cancelled', message: `Your booking ${booking.bookingNumber} has been cancelled.` },
+      CANCELLED: { type: NotificationType.BOOKING_CANCELLED, title: 'Booking Cancelled', message: `Your booking ${bookingData.bookingNumber} has been cancelled.` },
     };
 
-    if (notifMap[status] && booking.customerUserId) {
-      await createNotification(booking.customerUserId, notifMap[status].type, notifMap[status].title, notifMap[status].message, 'Booking', id);
+    if (notifMap[status] && bookingData.customerUserId) {
+      await createNotification(bookingData.customerUserId, notifMap[status].type, notifMap[status].title, notifMap[status].message, 'Booking', id);
     }
-    if (status === BookingStatus.CONFIRMED && booking.customerEmail) {
-      await sendBookingConfirmedEmail(booking.customerEmail, booking.customerName || 'Customer', booking.bookingNumber, `₹${Number(booking.totalAmount).toLocaleString('en-IN')}`, id);
+    if (status === BookingStatus.CONFIRMED && bookingData.customerEmail) {
+      await sendBookingConfirmedEmail(bookingData.customerEmail, bookingData.customerName || 'Customer', bookingData.bookingNumber, `₹${Number(bookingData.totalAmount).toLocaleString('en-IN')}`, id);
     }
-    if (status === BookingStatus.CANCELLED && booking.customerMobile) {
-      await sendBookingCancellation(booking.customerMobile, booking.customerName || 'Customer', booking.bookingNumber, id);
+    if (status === BookingStatus.CANCELLED && bookingData.customerMobile) {
+      await sendBookingCancellation(bookingData.customerMobile, bookingData.customerName || 'Customer', bookingData.bookingNumber, id);
     }
 
-    await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'STATUS_CHANGE', entity: 'Booking', entityId: id, description: `Booking ${booking.bookingNumber} status changed to ${status}`, ipAddress: req.ip });
+    await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'STATUS_CHANGE', entity: 'Booking', entityId: id, description: `Booking ${bookingData.bookingNumber} status changed to ${status}`, ipAddress: req.ip });
     sendSuccess(res, null, `Booking status updated to ${status}`);
   } catch (err) {
-    console.error(err);
-    sendError(res, 'Internal server error');
+    console.error("Post-transaction error:", err);
+    sendSuccess(res, null, `Booking status updated to ${status} (some notifications failed)`);
   }
 };
 
@@ -348,65 +360,82 @@ export const assignDriver = async (req: Request, res: Response): Promise<void> =
   const { id } = req.params;
   const { driverId } = req.body;
 
+  let assignedDriverName = '';
+  let customerMobile = '';
+  let customerId = '';
+  let bookingNumberStr = '';
+  let vehicleId = '';
+
+  const connection = await pool.getConnection();
   try {
-    const [[booking]]: any = await pool.execute('SELECT * FROM bookings WHERE id = ?', [id]);
-    if (!booking) { sendNotFound(res, 'Booking not found'); return; }
+    await connection.beginTransaction();
+
+    const [[booking]]: any = await connection.execute('SELECT * FROM bookings WHERE id = ? FOR UPDATE', [id]);
+    if (!booking) { await connection.rollback(); sendNotFound(res, 'Booking not found'); return; }
     if (booking.status !== BookingStatus.CONFIRMED && booking.status !== BookingStatus.PENDING) {
-      sendError(res, 'Driver can only be assigned to confirmed or pending bookings.', 400); return;
+      await connection.rollback(); sendError(res, 'Driver can only be assigned to confirmed or pending bookings.', 400); return;
     }
 
-    const [[driver]]: any = await pool.execute('SELECT * FROM driver_profiles WHERE id = ?', [driverId]);
-    if (!driver) { sendNotFound(res, 'Driver not found'); return; }
-    if (driver.status !== DriverStatus.AVAILABLE) { sendError(res, 'Selected driver is not available.', 400); return; }
+    const [[driver]]: any = await connection.execute('SELECT * FROM driver_profiles WHERE id = ? FOR UPDATE', [driverId]);
+    if (!driver) { await connection.rollback(); sendNotFound(res, 'Driver not found'); return; }
+    if (driver.status !== DriverStatus.AVAILABLE) { await connection.rollback(); sendError(res, 'Selected driver is not available.', 400); return; }
 
-    // Conflict check: the schema only tracks a pickup date/time (no trip
-    // end time), so same-day overlap on any other still-active booking is
-    // the practical signal that this driver is already committed elsewhere.
-    const [[conflict]]: any = await pool.execute(
+    const [[conflict]]: any = await connection.execute(
       `SELECT bookingNumber FROM bookings
        WHERE driverId = ? AND id != ? AND DATE(pickupDate) = DATE(?)
          AND status IN ('DRIVER_ASSIGNED','DRIVER_ACCEPTED','DRIVER_ON_THE_WAY','ARRIVED','TRIP_STARTED')
-       LIMIT 1`,
+       LIMIT 1 FOR UPDATE`,
       [driverId, id, booking.pickupDate]
     );
-    if (conflict) { sendError(res, `Driver is already assigned to booking ${conflict.bookingNumber} on this date.`, 409); return; }
+    if (conflict) { await connection.rollback(); sendError(res, `Driver is already assigned to booking ${conflict.bookingNumber} on this date.`, 409); return; }
 
     const historyId = uuidv4();
-    const connection = await pool.getConnection();
-    try {
-      await connection.beginTransaction();
-      await connection.execute('UPDATE bookings SET driverId = ?, status = ? WHERE id = ?', [driverId, BookingStatus.DRIVER_ASSIGNED, id]);
-      await connection.execute('UPDATE driver_profiles SET status = "ON_TRIP" WHERE id = ?', [driverId]);
-      await connection.execute(
-        'INSERT INTO booking_status_history (id, bookingId, status, note, changedBy, changedByRole, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())',
-        [historyId, id, BookingStatus.DRIVER_ASSIGNED, `Driver ${driver.fullName} assigned`, req.user?.userId || null, req.user?.role || null]
-      );
-      await connection.commit();
-    } catch (e) {
-      await connection.rollback();
-      throw e;
-    } finally {
-      connection.release();
+    await connection.execute('UPDATE bookings SET driverId = ?, status = ? WHERE id = ?', [driverId, BookingStatus.DRIVER_ASSIGNED, id]);
+    await connection.execute('UPDATE driver_profiles SET status = "ON_TRIP" WHERE id = ?', [driverId]);
+    await connection.execute(
+      'INSERT INTO booking_status_history (id, bookingId, status, note, changedBy, changedByRole, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())',
+      [historyId, id, BookingStatus.DRIVER_ASSIGNED, `Driver ${driver.fullName} assigned`, req.user?.userId || null, req.user?.role || null]
+    );
+    
+    assignedDriverName = driver.fullName;
+    customerId = booking.customerId;
+    bookingNumberStr = booking.bookingNumber;
+    vehicleId = booking.vehicleId;
+
+    await connection.commit();
+  } catch (e) {
+    await connection.rollback();
+    console.error(e);
+    sendError(res, 'Internal server error');
+    return;
+  } finally {
+    connection.release();
+  }
+
+  try {
+    const [[customer]]: any = await pool.execute(
+      `SELECT u.id as userId, u.mobile FROM customer_profiles c JOIN users u ON c.userId = u.id WHERE c.id = ?`, [customerId]
+    );
+    
+    // Attempt notifications (these shouldn't fail the request if they error out, but we await them for correctness)
+    const [[driverUser]]: any = await pool.execute('SELECT userId FROM driver_profiles WHERE id = ?', [driverId]);
+    if (driverUser) {
+      await createNotification(driverUser.userId, NotificationType.DRIVER_ASSIGNED, 'New Trip Assigned', `You have been assigned a new trip. Booking: ${bookingNumberStr}`, 'Booking', id);
     }
 
-    await createNotification(driver.userId, NotificationType.DRIVER_ASSIGNED, 'New Trip Assigned', `You have been assigned a new trip. Booking: ${booking.bookingNumber}`, 'Booking', id);
-
-    const [[customer]]: any = await pool.execute(
-      `SELECT u.id as userId, u.mobile FROM customer_profiles c JOIN users u ON c.userId = u.id WHERE c.id = ?`, [booking.customerId]
-    );
     if (customer) {
-      await createNotification(customer.userId, NotificationType.DRIVER_ASSIGNED, 'Driver Assigned', `Driver ${driver.fullName} has been assigned to your booking ${booking.bookingNumber}.`, 'Booking', id);
-      if (customer.mobile) {
-        const [[vehicle]]: any = await pool.execute('SELECT registrationNumber FROM vehicles WHERE id = ?', [booking.vehicleId]);
-        await sendDriverAssignment(customer.mobile, '', driver.fullName, vehicle?.registrationNumber || 'TBD', id);
+      await createNotification(customer.userId, NotificationType.DRIVER_ASSIGNED, 'Driver Assigned', `Driver ${assignedDriverName} has been assigned to your booking ${bookingNumberStr}.`, 'Booking', id);
+      if (customer.mobile && vehicleId) {
+        const [[vehicle]]: any = await pool.execute('SELECT registrationNumber FROM vehicles WHERE id = ?', [vehicleId]);
+        await sendDriverAssignment(customer.mobile, '', assignedDriverName, vehicle?.registrationNumber || 'TBD', id);
       }
     }
 
-    await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'ASSIGN_DRIVER', entity: 'Booking', entityId: id, description: `Driver ${driver.fullName} assigned`, ipAddress: req.ip });
+    await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'ASSIGN_DRIVER', entity: 'Booking', entityId: id, description: `Driver ${assignedDriverName} assigned`, ipAddress: req.ip });
     sendSuccess(res, null, 'Driver assigned successfully');
   } catch (err) {
-    console.error(err);
-    sendError(res, 'Internal server error');
+    console.error("Post-transaction error:", err);
+    sendSuccess(res, null, 'Driver assigned successfully (some notifications may have failed)');
   }
 };
 
@@ -414,13 +443,19 @@ export const assignVehicle = async (req: Request, res: Response): Promise<void> 
   const { id } = req.params;
   const { vehicleId } = req.body;
 
-  try {
-    const [[booking]]: any = await pool.execute('SELECT id, bookingNumber, pickupDate FROM bookings WHERE id = ?', [id]);
-    if (!booking) { sendNotFound(res, 'Booking not found'); return; }
+  let vehicleReg = '';
+  let bookingNum = '';
 
-    const [[vehicle]]: any = await pool.execute('SELECT * FROM vehicles WHERE id = ?', [vehicleId]);
-    if (!vehicle) { sendNotFound(res, 'Vehicle not found'); return; }
-    if (vehicle.status === VehicleStatus.MAINTENANCE || vehicle.status === VehicleStatus.INACTIVE) { sendError(res, 'Selected vehicle is not available.', 400); return; }
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [[booking]]: any = await connection.execute('SELECT id, bookingNumber, pickupDate FROM bookings WHERE id = ? FOR UPDATE', [id]);
+    if (!booking) { await connection.rollback(); sendNotFound(res, 'Booking not found'); return; }
+
+    const [[vehicle]]: any = await connection.execute('SELECT * FROM vehicles WHERE id = ? FOR UPDATE', [vehicleId]);
+    if (!vehicle) { await connection.rollback(); sendNotFound(res, 'Vehicle not found'); return; }
+    if (vehicle.status === VehicleStatus.MAINTENANCE || vehicle.status === VehicleStatus.INACTIVE) { await connection.rollback(); sendError(res, 'Selected vehicle is not available.', 400); return; }
 
     const today = new Date();
     const expiredDocs: string[] = [];
@@ -429,37 +464,40 @@ export const assignVehicle = async (req: Request, res: Response): Promise<void> 
     if (vehicle.permitExpiry && new Date(vehicle.permitExpiry) < today) expiredDocs.push('permit');
     if (vehicle.fitnessExpiry && new Date(vehicle.fitnessExpiry) < today) expiredDocs.push('fitness certificate');
     if (expiredDocs.length > 0) {
-      sendError(res, `Cannot assign this vehicle — its ${expiredDocs.join(', ')} has expired.`, 400);
-      return;
+      await connection.rollback(); sendError(res, `Cannot assign this vehicle — its ${expiredDocs.join(', ')} has expired.`, 400); return;
     }
 
-    const [[conflict]]: any = await pool.execute(
+    const [[conflict]]: any = await connection.execute(
       `SELECT bookingNumber FROM bookings
        WHERE vehicleId = ? AND id != ? AND DATE(pickupDate) = DATE(?)
          AND status IN ('DRIVER_ASSIGNED','DRIVER_ACCEPTED','DRIVER_ON_THE_WAY','ARRIVED','TRIP_STARTED')
-       LIMIT 1`,
+       LIMIT 1 FOR UPDATE`,
       [vehicleId, id, booking.pickupDate]
     );
-    if (conflict) { sendError(res, `Vehicle is already assigned to booking ${conflict.bookingNumber} on this date.`, 409); return; }
+    if (conflict) { await connection.rollback(); sendError(res, `Vehicle is already assigned to booking ${conflict.bookingNumber} on this date.`, 409); return; }
 
-    const connection = await pool.getConnection();
-    try {
-      await connection.beginTransaction();
-      await connection.execute('UPDATE bookings SET vehicleId = ? WHERE id = ?', [vehicleId, id]);
-      await connection.execute('UPDATE vehicles SET status = "ON_TRIP" WHERE id = ?', [vehicleId]);
-      await connection.commit();
-    } catch (e) {
-      await connection.rollback();
-      throw e;
-    } finally {
-      connection.release();
-    }
+    await connection.execute('UPDATE bookings SET vehicleId = ? WHERE id = ?', [vehicleId, id]);
+    await connection.execute('UPDATE vehicles SET status = "ON_TRIP" WHERE id = ?', [vehicleId]);
+    
+    vehicleReg = vehicle.registrationNumber;
+    bookingNum = booking.bookingNumber;
+    
+    await connection.commit();
+  } catch (e) {
+    await connection.rollback();
+    console.error(e);
+    sendError(res, 'Internal server error');
+    return;
+  } finally {
+    connection.release();
+  }
 
-    await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'ASSIGN_VEHICLE', entity: 'Booking', entityId: id, description: `Vehicle ${vehicle.registrationNumber} assigned to booking ${booking.bookingNumber}` });
+  try {
+    await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'ASSIGN_VEHICLE', entity: 'Booking', entityId: id, description: `Vehicle ${vehicleReg} assigned to booking ${bookingNum}` });
     sendSuccess(res, null, 'Vehicle assigned successfully');
   } catch (err) {
-    console.error(err);
-    sendError(res, 'Internal server error');
+    console.error("Post-transaction error:", err);
+    sendSuccess(res, null, 'Vehicle assigned successfully (audit log failed)');
   }
 };
 
@@ -553,45 +591,59 @@ export const cancelBooking = async (req: Request, res: Response): Promise<void> 
   const { id } = req.params;
   const { reason } = req.body;
 
+  let bookingData: any = null;
+
+  const connection = await pool.getConnection();
   try {
-    const [[booking]]: any = await pool.execute(
+    await connection.beginTransaction();
+
+    const [[booking]]: any = await connection.execute(
       `SELECT b.*, c.userId as customerUserId, u.mobile as customerMobile, c.fullName as customerName
-       FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id LEFT JOIN users u ON c.userId = u.id WHERE b.id = ?`, [id]
+       FROM bookings b LEFT JOIN customer_profiles c ON b.customerId = c.id LEFT JOIN users u ON c.userId = u.id WHERE b.id = ? FOR UPDATE`, [id]
     );
-    if (!booking) { sendNotFound(res, 'Booking not found'); return; }
+    if (!booking) { await connection.rollback(); sendNotFound(res, 'Booking not found'); return; }
+    bookingData = booking;
 
-    if (booking.status === BookingStatus.TRIP_STARTED || booking.status === BookingStatus.TRIP_COMPLETED) { sendError(res, 'Cannot cancel a trip that has started or completed.', 400); return; }
-
-    if (req.user?.role === Role.CUSTOMER && booking.customerUserId !== req.user.userId) { res.status(403).json({ success: false, message: 'Forbidden' }); return; }
-
-    const historyId = uuidv4();
-    const connection = await pool.getConnection();
-    try {
-      await connection.beginTransaction();
-      await connection.execute('UPDATE bookings SET status = ? WHERE id = ?', [BookingStatus.CANCELLED, id]);
-      await connection.execute(
-        'INSERT INTO booking_status_history (id, bookingId, status, note, changedBy, changedByRole, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())',
-        [historyId, id, BookingStatus.CANCELLED, reason || 'Cancelled', req.user?.userId || null, req.user?.role || null]
-      );
-      if (booking.driverId) await connection.execute('UPDATE driver_profiles SET status = "AVAILABLE" WHERE id = ?', [booking.driverId]);
-      if (booking.vehicleId) await connection.execute('UPDATE vehicles SET status = "AVAILABLE" WHERE id = ?', [booking.vehicleId]);
-      await connection.commit();
-    } catch (e) {
-      await connection.rollback();
-      throw e;
-    } finally {
-      connection.release();
+    if (booking.status === BookingStatus.TRIP_STARTED || booking.status === BookingStatus.TRIP_COMPLETED) { 
+      await connection.rollback(); sendError(res, 'Cannot cancel a trip that has started or completed.', 400); return; 
     }
 
-    if (booking.customerUserId) {
-      await createNotification(booking.customerUserId, NotificationType.BOOKING_CANCELLED, 'Booking Cancelled', `Your booking ${booking.bookingNumber} has been cancelled.`, 'Booking', id);
-      if (booking.customerMobile) await sendBookingCancellation(booking.customerMobile, booking.customerName || 'Customer', booking.bookingNumber, id);
+    if (req.user?.role === Role.CUSTOMER && booking.customerUserId !== req.user.userId) { 
+      await connection.rollback(); res.status(403).json({ success: false, message: 'Forbidden' }); return; 
+    }
+
+    const historyId = uuidv4();
+    
+    await connection.execute('UPDATE bookings SET status = ? WHERE id = ?', [BookingStatus.CANCELLED, id]);
+    await connection.execute(
+      'INSERT INTO booking_status_history (id, bookingId, status, note, changedBy, changedByRole, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())',
+      [historyId, id, BookingStatus.CANCELLED, reason || 'Cancelled', req.user?.userId || null, req.user?.role || null]
+    );
+    if (booking.driverId) await connection.execute('UPDATE driver_profiles SET status = "AVAILABLE" WHERE id = ?', [booking.driverId]);
+    if (booking.vehicleId) await connection.execute('UPDATE vehicles SET status = "AVAILABLE" WHERE id = ?', [booking.vehicleId]);
+    
+    await connection.commit();
+  } catch (e) {
+    await connection.rollback();
+    console.error(e);
+    sendError(res, 'Internal server error');
+    return;
+  } finally {
+    connection.release();
+  }
+
+  try {
+    if (bookingData.customerUserId) {
+      await createNotification(bookingData.customerUserId, NotificationType.BOOKING_CANCELLED, 'Booking Cancelled', `Your booking ${bookingData.bookingNumber} has been cancelled.`, 'Booking', id);
+    }
+    if (bookingData.customerMobile) {
+      await sendBookingCancellation(bookingData.customerMobile, bookingData.customerName || 'Customer', bookingData.bookingNumber, id);
     }
     await createAuditLog({ userId: req.user!.userId, userRole: req.user!.role, action: 'CANCEL', entity: 'Booking', entityId: id, description: `Booking cancelled: ${reason || 'N/A'}`, ipAddress: req.ip });
     
     sendSuccess(res, null, 'Booking cancelled successfully');
   } catch (err) {
-    console.error(err);
-    sendError(res, 'Internal server error');
+    console.error("Post-transaction error:", err);
+    sendSuccess(res, null, 'Booking cancelled successfully (audit/notifications failed)');
   }
 };

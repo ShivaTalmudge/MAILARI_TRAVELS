@@ -8,6 +8,7 @@ import { format } from 'date-fns';
 import { Button } from '../../components/ui/Button';
 import { Navigation, MapPin, Calendar, Clock, Phone } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
+import { Modal } from '../../components/ui/Modal';
 
 interface DriverDashboardData {
   driver: {
@@ -27,6 +28,8 @@ export default function DriverDashboard() {
   const [data, setData] = useState<DriverDashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showStartTripModal, setShowStartTripModal] = useState(false);
+  const [startKm, setStartKm] = useState('');
   const toast = useToast();
 
   const fetchDashboard = async () => {
@@ -44,17 +47,24 @@ export default function DriverDashboard() {
     fetchDashboard();
   }, []);
 
-  const updateTripStatus = async (tripId: string, status: string) => {
+  const updateTripStatus = async (tripId: string, status: string, additionalData: any = {}) => {
     try {
       setIsUpdating(true);
-      await api.patch(`/bookings/${tripId}/status`, { status });
+      await api.patch(`/bookings/${tripId}/status`, { status, ...additionalData });
       toast(`Trip status updated to ${status}`, 'success');
+      setShowStartTripModal(false);
+      setStartKm('');
       fetchDashboard(); // Refresh data
     } catch (error) {
       toast('Failed to update trip status', 'error');
     } finally {
       setIsUpdating(false);
     }
+  };
+
+  const handleStartTrip = () => {
+    if (!startKm) { toast('Start KM is required', 'error'); return; }
+    if (activeTrip) updateTripStatus(activeTrip.id, 'TRIP_STARTED', { startKm: Number(startKm) });
   };
 
   if (isLoading) {
@@ -167,7 +177,7 @@ export default function DriverDashboard() {
                       </Button>
                     )}
                     {activeTrip.status === 'ARRIVED' && (
-                      <Button onClick={() => updateTripStatus(activeTrip.id, 'TRIP_STARTED')} variant="primary" isLoading={isUpdating}>
+                      <Button onClick={() => setShowStartTripModal(true)} variant="primary" isLoading={isUpdating}>
                         Start Trip with Customer
                       </Button>
                     )}
@@ -214,6 +224,32 @@ export default function DriverDashboard() {
           </div>
         </div>
       )}
+
+      <Modal isOpen={showStartTripModal} onClose={() => setShowStartTripModal(false)} title="Start Trip Details">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">Please enter your starting odometer reading before beginning the trip.</p>
+          <div>
+            <label className="text-sm font-medium text-slate-700">Start Odometer (KM) *</label>
+            <input
+              type="number"
+              value={startKm}
+              onChange={(e) => setStartKm(e.target.value)}
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              placeholder="e.g. 45000"
+              required
+            />
+          </div>
+          <div className="flex gap-3 mt-6">
+            <Button variant="outline" className="flex-1" onClick={() => setShowStartTripModal(false)} disabled={isUpdating}>
+              Cancel
+            </Button>
+            <Button className="flex-1" onClick={handleStartTrip} isLoading={isUpdating}>
+              Start Trip
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
     </div>
   );
 }

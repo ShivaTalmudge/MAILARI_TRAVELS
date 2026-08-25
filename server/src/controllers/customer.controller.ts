@@ -70,7 +70,8 @@ export const getCustomerById = async (req: Request, res: Response): Promise<void
   try {
     const [users]: any = await pool.execute(
       `SELECT u.id, u.email, u.mobile, u.status, u.lastLoginAt, u.createdAt,
-              c.id as profileId, c.fullName, c.address, c.city, c.state, c.pincode
+              c.id as profileId, c.fullName, c.address, c.city, c.state, c.pincode,
+              c.photoUrl, c.emergencyContactName, c.emergencyContactNumber, c.preferredLanguage, c.savedPassengers
        FROM users u
        LEFT JOIN customer_profiles c ON u.id = c.userId
        WHERE u.id = ?`,
@@ -98,6 +99,9 @@ export const getCustomerById = async (req: Request, res: Response): Promise<void
       id: user.profileId || user.id,
       fullName: user.fullName || 'Unknown',
       address: user.address, city: user.city, state: user.state, pincode: user.pincode,
+      photoUrl: user.photoUrl, emergencyContactName: user.emergencyContactName, 
+      emergencyContactNumber: user.emergencyContactNumber, preferredLanguage: user.preferredLanguage,
+      savedPassengers: user.savedPassengers,
       user: {
         id: user.id, email: user.email, mobile: user.mobile, isActive: user.status === 'ACTIVE', lastLoginAt: user.lastLoginAt, createdAt: user.createdAt,
       },
@@ -134,12 +138,23 @@ export const updateCustomer = async (req: Request, res: Response): Promise<void>
       if (email !== undefined) {
         await connection.execute('UPDATE users SET email = ? WHERE id = ?', [email || null, id]);
       }
+      
+      const { photoUrl, emergencyContactName, emergencyContactNumber, preferredLanguage, savedPassengers } = req.body;
+      
       await connection.execute(
         `UPDATE customer_profiles SET
            fullName = COALESCE(?, fullName), address = COALESCE(?, address),
-           city = COALESCE(?, city), state = COALESCE(?, state), pincode = COALESCE(?, pincode)
+           city = COALESCE(?, city), state = COALESCE(?, state), pincode = COALESCE(?, pincode),
+           photoUrl = COALESCE(?, photoUrl), emergencyContactName = COALESCE(?, emergencyContactName),
+           emergencyContactNumber = COALESCE(?, emergencyContactNumber), preferredLanguage = COALESCE(?, preferredLanguage),
+           savedPassengers = COALESCE(?, savedPassengers)
          WHERE userId = ?`,
-        [fullName || null, address || null, city || null, state || null, pincode || null, id]
+        [
+          fullName || null, address || null, city || null, state || null, pincode || null,
+          photoUrl || null, emergencyContactName || null, emergencyContactNumber || null, preferredLanguage || null,
+          savedPassengers !== undefined ? JSON.stringify(savedPassengers) : null,
+          id
+        ]
       );
       await connection.commit();
     } catch (e) {

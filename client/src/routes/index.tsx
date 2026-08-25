@@ -25,6 +25,7 @@ import AdminSettings from '../pages/admin/AdminSettings';
 import AdminPricing from '../pages/admin/AdminPricing';
 import AdminReports from '../pages/admin/AdminReports';
 import AdminAuditLogs from '../pages/admin/AdminAuditLogs';
+import AdminDispatch from '../pages/admin/AdminDispatch';
 
 // Customer Pages
 import CustomerDashboard from '../pages/customer/CustomerDashboard';
@@ -34,6 +35,8 @@ import CustomerProfile from '../pages/customer/CustomerProfile';
 import CustomerPayments from '../pages/customer/CustomerPayments';
 import CustomerInvoices from '../pages/customer/CustomerInvoices';
 import CustomerSupport from '../pages/customer/CustomerSupport';
+
+import InvoicePrintView from '../pages/customer/InvoicePrintView';
 
 // Driver Pages
 import DriverDashboard from '../pages/driver/DriverDashboard';
@@ -77,6 +80,7 @@ export default function AppRoutes() {
         <Route path="pricing" element={<AdminPricing />} />
         <Route path="reports" element={<AdminReports />} />
         <Route path="audit-logs" element={<AdminAuditLogs />} />
+        <Route path="dispatch" element={<AdminDispatch />} />
       </Route>
 
       {/* Customer Routes */}
@@ -88,6 +92,7 @@ export default function AppRoutes() {
         <Route path="profile" element={<CustomerProfile />} />
         <Route path="payments" element={<CustomerPayments />} />
         <Route path="invoices" element={<CustomerInvoices />} />
+        <Route path="invoices/:id/print" element={<InvoicePrintView />} />
         <Route path="support" element={<CustomerSupport />} />
       </Route>
 
