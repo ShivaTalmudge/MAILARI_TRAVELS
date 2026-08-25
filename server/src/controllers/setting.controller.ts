@@ -29,7 +29,7 @@ export const updateSettings = async (req: Request, res: Response): Promise<void>
           await connection.execute('UPDATE system_settings SET value = ?, updatedAt = NOW() WHERE `key` = ?', [String(value), key]);
         } else {
           await connection.execute(
-            'INSERT INTO system_settings (`key`, value, label, category, createdAt, updatedAt) VALUES (?, ?, ?, ?, NOW(), NOW())',
+            'INSERT INTO system_settings (id, `key`, value, label, category, createdAt, updatedAt) VALUES (UUID(), ?, ?, ?, ?, NOW(), NOW())',
             [key, String(value), key, 'general']
           );
         }
